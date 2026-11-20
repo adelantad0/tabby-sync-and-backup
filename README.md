@@ -18,7 +18,7 @@ Two-in-one synchronization and automated backup tool for [Tabby Terminal](https:
 
 Under **Settings -> Sync & Backup**, the plugin provides five dedicated sections:
 1. **🔄 Sync**: Storage provider selection (WebDAV, Local directory), schedule intervals, explicit "Save Settings" workflow, and manual sync controls.
-2. **🛡️ Backups**: Automated pre-sync & startup snapshot policies, max retention settings, and interactive snapshot restoration table.
+2. **🛡️ Backups**: Dual local (in Tabby directory) and remote (`/backups`) snapshot management, automated retention rotation, pre-sync & startup policies, and one-click restore.
 3. **🔐 Security**: Client-side AES-256 payload encryption with master passphrase and Tabby Vault status.
 4. **📜 Changelog**: In-app version history and release notes viewer.
 5. **ℹ️ About**: Plugin information, dynamic version display, update checking, and issue reporting links.

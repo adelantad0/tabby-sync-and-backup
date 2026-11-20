@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Modular sub-navigation tabs in Settings (`Sync`, `Backups`, `Security`, `Changelog`, `About`).
 - Storage provider selector with dedicated configuration panels for WebDAV and Local Directory.
-- Backup snapshot policies UI with retention rotation controls and snapshots list table.
+- Dual-target backup engine (`BackupService`) supporting local snapshots (in Tabby config directory) and remote snapshots (`/backups` on WebDAV or local directory).
+- Automated retention policy rotation for both local and remote snapshots based on `maxBackupsToKeep`.
+- Safety pre-restore snapshot generation preventing configuration loss during restores.
+- Segmented UI switcher between Local Backups and Remote Backups with live status, upload, restore, and deletion actions.
 - AES-256 payload encryption settings panel and Tabby Vault status indicator.
 - In-app Changelog viewer and About card with dynamic version badge and update checker.
 - Live update check engine querying GitHub Releases API with visual update banner and notifications.
@@ -24,9 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Streamlined storage providers to WebDAV and Local Directory (temporarily removed GitHub Gist).
 - Refactored settings persistence to an explicit "Save Settings" workflow with dirty state tracking, preventing unintended auto-saves on keystrokes.
+- Conditional activation of Remote Backups: locked with guidance card until sync storage is configured.
 
 ### Fixed
 - Fixed duplicate 'v' prefix in GitHub Actions release title.
+- Fixed snapshot table list rendering by importing Angular CommonModule and FormsModule into root NgModule.
 
 ---
 

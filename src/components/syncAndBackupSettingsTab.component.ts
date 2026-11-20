@@ -1,8 +1,10 @@
 import { Component, HostBinding, OnInit } from '@angular/core'
 import { ConfigService, NotificationsService, PlatformService } from 'tabby-core'
+import { BackupService, BackupSnapshotItem } from '../services/backup.service'
 import packageJson from '../../package.json'
 
 type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
+type BackupView = 'local' | 'remote'
 
 interface UpdateInfo {
     version: string
@@ -11,19 +13,14 @@ interface UpdateInfo {
     body: string
 }
 
-interface BackupSnapshotItem {
-    id: string
-    filename: string
-    timestamp: number
-    formattedDate: string
-    sizeKb: number
-    trigger: 'Manual' | 'Pre-Sync' | 'Startup'
-}
-
 /**
  * Modular Settings Tab Component for Tabby Sync & Backup
- * Features 5 sub-navigation sections: Sync, Backups, Security, Changelog, and About.
- * Explicit "Save Settings" workflow protects configuration integrity.
+ * Features:
+ * - 5 sub-navigation tabs (Sync, Backups, Security, Changelog, About)
+ * - Dual backup engine: Local (in Tabby directory) and Remote (/backups on sync target)
+ * - Remote Backups conditionally activated only when sync target is configured
+ * - Remote and local retention policies with automatic rotation
+ * - Explicit Save Settings bar
  */
 @Component({
     selector: 'sync-and-backup-settings-tab',
@@ -284,26 +281,9 @@ interface BackupSnapshotItem {
 
         <!-- ==================== TAB 2: BACKUPS ==================== -->
         <div [class.d-none]="activeTab !== 'backups'">
+            <!-- Backup Policies Card -->
             <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Automated Snapshot Policies</span>
-                    <div class="d-flex gap-2">
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-outline-secondary"
-                            (click)="openSnapshotsFolder()"
-                        >
-                            📁 Open Folder
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-sm btn-success"
-                            (click)="createManualBackup()"
-                        >
-                            ➕ Create Backup Now
-                        </button>
-                    </div>
-                </div>
+                <div class="card-header fw-bold">Automated Snapshot Policies &amp; Retention</div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input
@@ -335,7 +315,7 @@ interface BackupSnapshotItem {
                     </div>
 
                     <div class="mb-2">
-                        <label class="form-label">Retention Policy (Max snapshots to keep)</label>
+                        <label class="form-label">Retention Policy (Max snapshots to keep per location)</label>
                         <select
                             class="form-select"
                             [value]="formData.maxBackupsToKeep"
@@ -347,62 +327,228 @@ interface BackupSnapshotItem {
                             <option [value]="50">50 snapshots</option>
                         </select>
                         <div class="form-text">
-                            Older snapshots are automatically rotated and deleted when this limit is reached.
+                            Older snapshots are automatically rotated and pruned on both local disk and remote storage.
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Existing Snapshots Table -->
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Local Backup Snapshots</span>
-                    <span class="badge bg-secondary">{{ dummyBackups.length }} snapshots</span>
+            <!-- Segmented Switcher: Local Backups vs Remote Backups -->
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div class="btn-group" role="group">
+                    <button
+                        type="button"
+                        class="btn"
+                        [class.btn-primary]="backupView === 'local'"
+                        [class.btn-outline-primary]="backupView !== 'local'"
+                        (click)="setBackupView('local')"
+                    >
+                        💻 Local Backups (In Tabby Dir)
+                        <span class="badge bg-light text-dark ms-1">{{ localBackups.length }}</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="btn"
+                        [class.btn-primary]="backupView === 'remote'"
+                        [class.btn-outline-primary]="backupView !== 'remote'"
+                        (click)="setBackupView('remote')"
+                    >
+                        <span [class.d-none]="isSyncConfigured()">🔒</span>
+                        <span [class.d-none]="!isSyncConfigured()">☁️</span>
+                        Remote Backups (/backups)
+                        <span class="badge bg-light text-dark ms-1" [class.d-none]="!isSyncConfigured()">
+                            {{ remoteBackups.length }}
+                        </span>
+                    </button>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover m-0 align-middle">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>Date &amp; Time</th>
-                                    <th>Trigger</th>
-                                    <th>Size</th>
-                                    <th class="text-end">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr *ngFor="let item of dummyBackups">
-                                    <td class="font-monospace small">{{ item.formattedDate }}</td>
-                                    <td>
-                                        <span
-                                            class="badge"
-                                            [class.bg-info]="item.trigger === 'Manual'"
-                                            [class.bg-warning]="item.trigger === 'Pre-Sync'"
-                                            [class.bg-secondary]="item.trigger === 'Startup'"
-                                        >
-                                            {{ item.trigger }}
-                                        </span>
-                                    </td>
-                                    <td class="small">{{ item.sizeKb }} KB</td>
-                                    <td class="text-end">
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-primary me-2"
-                                            (click)="restoreBackup(item)"
-                                        >
-                                            Restore
-                                        </button>
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-danger"
-                                            (click)="deleteBackup(item)"
-                                        >
-                                            Delete
-                                        </button>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+
+                <!-- Actions for Local View -->
+                <div class="d-flex gap-2" [class.d-none]="backupView !== 'local'">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        (click)="openSnapshotsFolder()"
+                    >
+                        📁 Open Folder
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-success"
+                        (click)="createLocalBackupNow()"
+                    >
+                        ➕ Create Local Backup
+                    </button>
+                </div>
+
+                <!-- Actions for Remote View (When Configured) -->
+                <div class="d-flex gap-2" [class.d-none]="backupView !== 'remote' || !isSyncConfigured()">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        [disabled]="isLoadingBackups"
+                        (click)="loadRemoteBackups()"
+                    >
+                        🔄 Refresh Remote
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-success"
+                        [disabled]="isLoadingBackups"
+                        (click)="createRemoteBackupNow()"
+                    >
+                        ☁️ Create Remote Backup
+                    </button>
+                </div>
+            </div>
+
+            <!-- VIEW 1: LOCAL BACKUPS -->
+            <div [class.d-none]="backupView !== 'local'">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">Local Snapshots (Stored in Tabby directory)</span>
+                        <span class="text-muted small">Max retention: {{ formData.maxBackupsToKeep }}</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="p-4 text-center text-muted" [class.d-none]="localBackups.length > 0">
+                            No local backups found. Click <strong>«➕ Create Local Backup»</strong> above to create your first snapshot.
+                        </div>
+                        <div class="table-responsive" [class.d-none]="localBackups.length === 0">
+                            <table class="table table-hover m-0 align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Date &amp; Time</th>
+                                        <th>Trigger</th>
+                                        <th>Size</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let item of localBackups">
+                                        <td class="font-monospace small">{{ item.formattedDate }}</td>
+                                        <td>
+                                            <span
+                                                class="badge"
+                                                [class.bg-info]="item.trigger === 'Manual'"
+                                                [class.bg-warning]="item.trigger === 'Pre-Sync'"
+                                                [class.bg-secondary]="item.trigger === 'Startup'"
+                                            >
+                                                {{ item.trigger }}
+                                            </span>
+                                        </td>
+                                        <td class="small">{{ item.sizeKb }} KB</td>
+                                        <td class="text-end">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-primary me-2"
+                                                (click)="restoreLocalBackup(item)"
+                                            >
+                                                Restore
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-info me-2"
+                                                [disabled]="!isSyncConfigured()"
+                                                [title]="isSyncConfigured() ? 'Upload to remote /backups/' : 'Configure Sync first to upload'"
+                                                (click)="uploadLocalToRemote(item)"
+                                            >
+                                                ☁️ Upload
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                (click)="deleteLocalBackup(item)"
+                                            >
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VIEW 2: REMOTE BACKUPS -->
+            <div [class.d-none]="backupView !== 'remote'">
+                <!-- When Sync is NOT configured: Helpful Onboarding Card -->
+                <div class="card p-4 text-center my-3" [class.d-none]="isSyncConfigured()">
+                    <div class="mb-2 fs-2">☁️🔒</div>
+                    <h5 class="fw-bold">Remote Backups Inactive</h5>
+                    <p class="text-muted mx-auto" style="max-width: 500px;">
+                        Remote backups are stored in the <code>/backups/</code> folder of your sync destination.
+                        To activate remote backups, please configure your <strong>WebDAV server</strong> or <strong>Local Directory</strong> in the Sync tab first.
+                    </p>
+                    <div>
+                        <button type="button" class="btn btn-primary" (click)="setTab('sync')">
+                            ⚙️ Go to Sync Settings
+                        </button>
+                    </div>
+                </div>
+
+                <!-- When Sync IS configured: Real Remote Snapshots Table -->
+                <div class="card mb-3" [class.d-none]="!isSyncConfigured()">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="fw-bold">Remote Snapshots</span>
+                            <span class="badge bg-success ms-2">{{ remoteTargetDescription }}</span>
+                        </div>
+                        <span class="text-muted small">Auto-rotated (Max: {{ formData.maxBackupsToKeep }})</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="p-4 text-center text-muted" [class.d-none]="!isLoadingBackups">
+                            ⏳ Fetching remote backups list...
+                        </div>
+                        <div
+                            class="p-4 text-center text-muted"
+                            [class.d-none]="isLoadingBackups || remoteBackups.length > 0"
+                        >
+                            No remote backups found on {{ remoteTargetDescription }}. Click <strong>«☁️ Create Remote Backup»</strong> or upload a local snapshot.
+                        </div>
+                        <div class="table-responsive" [class.d-none]="isLoadingBackups || remoteBackups.length === 0">
+                            <table class="table table-hover m-0 align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>Date &amp; Time</th>
+                                        <th>Trigger</th>
+                                        <th>Size</th>
+                                        <th class="text-end">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr *ngFor="let item of remoteBackups">
+                                        <td class="font-monospace small">{{ item.formattedDate }}</td>
+                                        <td>
+                                            <span
+                                                class="badge"
+                                                [class.bg-info]="item.trigger === 'Manual'"
+                                                [class.bg-warning]="item.trigger === 'Pre-Sync'"
+                                                [class.bg-secondary]="item.trigger === 'Startup'"
+                                            >
+                                                {{ item.trigger }}
+                                            </span>
+                                        </td>
+                                        <td class="small">{{ item.sizeKb }} KB</td>
+                                        <td class="text-end">
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-primary me-2"
+                                                (click)="restoreRemoteBackup(item)"
+                                            >
+                                                ⬇️ Restore
+                                            </button>
+                                            <button
+                                                type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                (click)="deleteRemoteBackup(item)"
+                                            >
+                                                Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -484,11 +630,11 @@ interface BackupSnapshotItem {
                             <span class="text-muted small">Upcoming Release</span>
                         </div>
                         <ul class="mb-0">
+                            <li><strong>Local &amp; Remote Backups Engine</strong>: Dual snapshot management supporting local storage in Tabby config directory and remote storage under <code>/backups/</code>.</li>
+                            <li><strong>Conditional Remote Activation</strong>: Remote backups are activated only when a valid sync target is configured.</li>
+                            <li><strong>Dual Retention Policy &amp; Rotation</strong>: Automated pruning and rotation of both local and remote snapshots when the limit is exceeded.</li>
                             <li><strong>Explicit Save Workflow</strong>: Settings modifications require clicking "Save Settings" rather than auto-saving immediately.</li>
                             <li><strong>Streamlined Storage Providers</strong>: Focused WebDAV and Local Directory synchronization targets.</li>
-                            <li><strong>Modular Settings Tabs</strong>: Dedicated sub-tabs for Sync, Backups, Security, Changelog, and About.</li>
-                            <li><strong>Automated Backup Policies</strong>: Support for pre-sync and startup backup snapshots with retention rotation.</li>
-                            <li><strong>Updates &amp; Diagnostics Engine</strong>: Real-time update checks via GitHub Releases and system diagnostics clipboard export.</li>
                         </ul>
                     </div>
 
@@ -618,6 +764,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     @HostBinding('class.content-box') true = true
 
     activeTab: SettingsSubTab = 'sync'
+    backupView: BackupView = 'local'
     pluginVersion: string = packageJson.version || '0.1.0'
 
     isDirty: boolean = false
@@ -637,38 +784,25 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         encryptionPassword: '',
     }
 
+    localBackups: BackupSnapshotItem[] = []
+    remoteBackups: BackupSnapshotItem[] = []
+    isLoadingBackups: boolean = false
+    remoteTargetDescription: string = ''
+
     isCheckingUpdates: boolean = false
     hasCheckedUpdates: boolean = false
     updateInfo: UpdateInfo | null = null
-
-    // Sample snapshots for UI representation (will connect to BackupService next)
-    dummyBackups: BackupSnapshotItem[] = [
-        {
-            id: 'snapshot-20261120-220000',
-            filename: 'config-20261120-220000.yaml',
-            timestamp: Date.now() - 3600000,
-            formattedDate: '2026-11-20 22:00:00',
-            sizeKb: 14.2,
-            trigger: 'Pre-Sync',
-        },
-        {
-            id: 'snapshot-20261120-190000',
-            filename: 'config-20261120-190000.yaml',
-            timestamp: Date.now() - 14400000,
-            formattedDate: '2026-11-20 19:00:00',
-            sizeKb: 14.1,
-            trigger: 'Manual',
-        },
-    ]
 
     constructor(
         public config: ConfigService,
         private notifications: NotificationsService,
         private platform: PlatformService,
+        private backupService: BackupService,
     ) {}
 
-    ngOnInit(): void {
+    async ngOnInit(): Promise<void> {
         this.resetForm()
+        await this.loadLocalBackups()
     }
 
     resetForm(): void {
@@ -689,6 +823,17 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             encryptionPassword: saved.encryptionPassword || '',
         }
         this.isDirty = false
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+    }
+
+    isSyncConfigured(): boolean {
+        if (this.formData.syncProvider === 'webdav') {
+            return !!(this.formData.webdavUrl && this.formData.webdavUrl.trim())
+        }
+        if (this.formData.syncProvider === 'local') {
+            return !!(this.formData.localSyncPath && this.formData.localSyncPath.trim())
+        }
+        return false
     }
 
     onFieldChange(field: string, value: any): void {
@@ -698,6 +843,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             this.formData[field] = value
         }
         this.isDirty = true
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
     }
 
     async saveSettings(): Promise<void> {
@@ -707,6 +853,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         Object.assign(this.config.store.syncAndBackup, this.formData)
         await this.config.save()
         this.isDirty = false
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
         this.notifications.notice('Sync & Backup settings saved successfully!')
     }
 
@@ -717,7 +864,151 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     setTab(tab: SettingsSubTab): void {
         this.activeTab = tab
+        if (tab === 'backups') {
+            this.loadLocalBackups()
+            if (this.backupView === 'remote' && this.isSyncConfigured()) {
+                this.loadRemoteBackups()
+            }
+        }
     }
+
+    setBackupView(view: BackupView): void {
+        this.backupView = view
+        if (view === 'local') {
+            this.loadLocalBackups()
+        } else if (this.isSyncConfigured()) {
+            this.loadRemoteBackups()
+        }
+    }
+
+    // ==========================================
+    // BACKUP ACTIONS
+    // ==========================================
+
+    async loadLocalBackups(): Promise<void> {
+        try {
+            this.localBackups = await this.backupService.listLocalBackups()
+        } catch (e: any) {
+            console.error('[tabby-sync-and-backup] Failed to list local backups:', e)
+        }
+    }
+
+    async loadRemoteBackups(): Promise<void> {
+        if (!this.isSyncConfigured()) {
+            this.remoteBackups = []
+            return
+        }
+        this.isLoadingBackups = true
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+        try {
+            this.remoteBackups = await this.backupService.listRemoteBackups()
+        } catch (e: any) {
+            this.notifications.error(`Could not fetch remote backups: ${e?.message || e}`)
+            this.remoteBackups = []
+        } finally {
+            this.isLoadingBackups = false
+        }
+    }
+
+    async createLocalBackupNow(): Promise<void> {
+        try {
+            const snapshot = await this.backupService.createLocalBackup('Manual')
+            await this.loadLocalBackups()
+            this.notifications.notice(`Local snapshot created: ${snapshot.filename}`)
+        } catch (e: any) {
+            this.notifications.error(`Failed to create local backup: ${e?.message || e}`)
+        }
+    }
+
+    async createRemoteBackupNow(): Promise<void> {
+        if (!this.isSyncConfigured()) {
+            this.notifications.error('Please configure your sync storage in the Sync tab first.')
+            return
+        }
+        this.isLoadingBackups = true
+        try {
+            const snapshot = await this.backupService.createRemoteBackup('Manual')
+            await this.loadRemoteBackups()
+            this.notifications.notice(`Remote snapshot created: ${snapshot.filename}`)
+        } catch (e: any) {
+            this.notifications.error(`Failed to create remote backup: ${e?.message || e}`)
+        } finally {
+            this.isLoadingBackups = false
+        }
+    }
+
+    async restoreLocalBackup(item: BackupSnapshotItem): Promise<void> {
+        try {
+            await this.backupService.restoreLocalBackup(item.filename)
+            await this.loadLocalBackups()
+            this.notifications.notice(`Configuration successfully restored from ${item.formattedDate}!`)
+        } catch (e: any) {
+            this.notifications.error(`Failed to restore local backup: ${e?.message || e}`)
+        }
+    }
+
+    async restoreRemoteBackup(item: BackupSnapshotItem): Promise<void> {
+        this.isLoadingBackups = true
+        try {
+            await this.backupService.restoreRemoteBackup(item)
+            await this.loadLocalBackups()
+            this.notifications.notice(`Configuration successfully restored from remote snapshot (${item.formattedDate})!`)
+        } catch (e: any) {
+            this.notifications.error(`Failed to restore remote backup: ${e?.message || e}`)
+        } finally {
+            this.isLoadingBackups = false
+        }
+    }
+
+    async uploadLocalToRemote(item: BackupSnapshotItem): Promise<void> {
+        if (!this.isSyncConfigured()) {
+            this.notifications.error('Cannot upload: configure a valid WebDAV or Local Sync folder first.')
+            return
+        }
+        try {
+            await this.backupService.uploadLocalSnapshotToRemote(item)
+            this.notifications.notice(`Uploaded ${item.filename} to remote /backups/!`)
+            if (this.backupView === 'remote') {
+                await this.loadRemoteBackups()
+            }
+        } catch (e: any) {
+            this.notifications.error(`Failed to upload snapshot to remote: ${e?.message || e}`)
+        }
+    }
+
+    async deleteLocalBackup(item: BackupSnapshotItem): Promise<void> {
+        try {
+            await this.backupService.deleteLocalBackup(item.filename)
+            await this.loadLocalBackups()
+            this.notifications.info('Local snapshot deleted.')
+        } catch (e: any) {
+            this.notifications.error(`Failed to delete local backup: ${e?.message || e}`)
+        }
+    }
+
+    async deleteRemoteBackup(item: BackupSnapshotItem): Promise<void> {
+        try {
+            await this.backupService.deleteRemoteBackup(item.filename)
+            await this.loadRemoteBackups()
+            this.notifications.info('Remote snapshot deleted.')
+        } catch (e: any) {
+            this.notifications.error(`Failed to delete remote backup: ${e?.message || e}`)
+        }
+    }
+
+    openSnapshotsFolder(): void {
+        const dir = this.backupService.getLocalBackupsDir()
+        try {
+            this.platform.openPath(dir)
+            this.notifications.info(`Opening snapshots directory: ${dir}`)
+        } catch (err: any) {
+            this.notifications.error(`Could not open directory: ${err?.message || err}`)
+        }
+    }
+
+    // ==========================================
+    // OTHER UTILITIES
+    // ==========================================
 
     openUrl(url: string): void {
         if (this.platform?.openExternal) {
@@ -736,17 +1027,6 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             }
         } catch (err: any) {
             this.notifications.error(`Could not pick folder: ${err?.message || err}`)
-        }
-    }
-
-    openSnapshotsFolder(): void {
-        const homeDir = process.env.HOME || process.env.USERPROFILE || ''
-        const snapshotsPath = `${homeDir}/Library/Application Support/tabby/sync-and-backup/snapshots`
-        try {
-            this.platform.openPath(snapshotsPath)
-            this.notifications.info(`Opening snapshots directory: ${snapshotsPath}`)
-        } catch (err: any) {
-            this.notifications.error(`Could not open directory: ${err?.message || err}`)
         }
     }
 
@@ -843,19 +1123,6 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     triggerDownload(): void {
         this.notifications.info('Sync & Backup: Downloading remote configuration...')
-    }
-
-    createManualBackup(): void {
-        this.notifications.notice('Sync & Backup: New snapshot created successfully!')
-    }
-
-    restoreBackup(item: BackupSnapshotItem): void {
-        this.notifications.info(`Sync & Backup: Restoring snapshot from ${item.formattedDate}...`)
-    }
-
-    deleteBackup(item: BackupSnapshotItem): void {
-        this.dummyBackups = this.dummyBackups.filter(b => b.id !== item.id)
-        this.notifications.info('Sync & Backup: Snapshot deleted.')
     }
 
     private isNewerVersion(remoteVer: string, currentVer: string): boolean {

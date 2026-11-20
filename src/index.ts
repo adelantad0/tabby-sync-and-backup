@@ -1,4 +1,6 @@
 import { NgModule, Injectable } from '@angular/core'
+import { CommonModule } from '@angular/common'
+import { FormsModule } from '@angular/forms'
 import {
     ToolbarButtonProvider,
     ToolbarButton,
@@ -12,6 +14,7 @@ import { SettingsTabProvider } from 'tabby-settings'
 
 import { SyncAndBackupSettingsTabProvider } from './settings'
 import { SyncAndBackupSettingsTabComponent } from './components/syncAndBackupSettingsTab.component'
+import { BackupService } from './services/backup.service'
 
 // @ts-ignore
 import syncIcon from './icons/sync.svg'
@@ -115,7 +118,12 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
  * 4. Main NgModule for Tabby Sync & Backup
  */
 @NgModule({
+    imports: [
+        CommonModule,
+        FormsModule,
+    ],
     providers: [
+        BackupService,
         { provide: ToolbarButtonProvider, useClass: SyncAndBackupToolbarButtonProvider, multi: true },
         { provide: HotkeyProvider, useClass: SyncAndBackupHotkeyProvider, multi: true },
         { provide: ConfigProvider, useClass: SyncAndBackupConfigProvider, multi: true },
