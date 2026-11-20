@@ -2,6 +2,9 @@ import { Injectable } from '@angular/core'
 import { ConfigService, NotificationsService } from 'tabby-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import { CryptoService, EncryptionStatus } from './crypto.service'
+
+export type BackupTrigger = 'Manual' | 'Pre-Sync' | 'Startup' | 'Pre-Restore'
 
 export interface BackupSnapshotItem {
     id: string
@@ -9,8 +12,9 @@ export interface BackupSnapshotItem {
     timestamp: number
     formattedDate: string
     sizeKb: number
-    trigger: 'Manual' | 'Pre-Sync' | 'Startup'
+    trigger: BackupTrigger
     location: 'local' | 'remote'
+    encryptionStatus: EncryptionStatus
     fullPath?: string
     remoteUrl?: string
 }
@@ -51,7 +55,7 @@ function generateBackupFilename(d: Date, trigger: string): string {
 /**
  * Parse date and trigger from a standard backup filename
  */
-function parseBackupFilename(filename: string): { timestamp: number; trigger: 'Manual' | 'Pre-Sync' | 'Startup' } {
+function parseBackupFilename(filename: string): { timestamp: number; trigger: BackupTrigger } {
     const match = filename.match(/^tabby-backup-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-([a-z0-9]+)\.yaml$/)
     if (match) {
         const [, year, month, day, hour, min, sec, slug] = match
@@ -63,9 +67,10 @@ function parseBackupFilename(filename: string): { timestamp: number; trigger: 'M
             parseInt(min, 10),
             parseInt(sec, 10),
         )
-        let trigger: 'Manual' | 'Pre-Sync' | 'Startup' = 'Manual'
+        let trigger: BackupTrigger = 'Manual'
         if (slug === 'presync') trigger = 'Pre-Sync'
         if (slug === 'startup') trigger = 'Startup'
+        if (slug === 'prerestore') trigger = 'Pre-Restore'
         return { timestamp: date.getTime(), trigger }
     }
     return { timestamp: Date.now(), trigger: 'Manual' }
@@ -98,6 +103,7 @@ export class BackupService {
         const dir = this.ensureLocalBackupsDir()
         const files = fs.readdirSync(dir)
         const snapshots: BackupSnapshotItem[] = []
+        const currentPassword = this.config.store?.syncAndBackup?.encryptionPassword || ''
 
         for (const file of files) {
             if (file.startsWith('tabby-backup-') && file.endsWith('.yaml')) {
@@ -106,6 +112,20 @@ export class BackupService {
                     const stats = fs.statSync(fullPath)
                     const parsed = parseBackupFilename(file)
                     const ts = parsed.timestamp || stats.mtimeMs
+
+                    // Lightweight header inspection to detect encryption & password validity
+                    let encStatus: EncryptionStatus = 'unencrypted'
+                    try {
+                        const fd = fs.openSync(fullPath, 'r')
+                        const buf = Buffer.alloc(2048)
+                        const bytesRead = fs.readSync(fd, buf, 0, 2048, 0)
+                        fs.closeSync(fd)
+                        const sample = buf.toString('utf8', 0, bytesRead)
+                        encStatus = CryptoService.checkPassword(sample, currentPassword)
+                    } catch (e) {
+                        console.warn(`[tabby-sync-and-backup] Header check failed for ${file}:`, e)
+                    }
+
                     snapshots.push({
                         id: file,
                         filename: file,
@@ -114,6 +134,7 @@ export class BackupService {
                         sizeKb: Math.round((stats.size / 1024) * 10) / 10,
                         trigger: parsed.trigger,
                         location: 'local',
+                        encryptionStatus: encStatus,
                         fullPath,
                     })
                 } catch (e) {
@@ -122,22 +143,34 @@ export class BackupService {
             }
         }
 
-        // Sort newest first
         snapshots.sort((a, b) => b.timestamp - a.timestamp)
         return snapshots
     }
 
-    async createLocalBackup(trigger: 'Manual' | 'Pre-Sync' | 'Startup' = 'Manual'): Promise<BackupSnapshotItem> {
+    async createLocalBackup(
+        trigger: BackupTrigger = 'Manual',
+        overridePassword?: string,
+    ): Promise<BackupSnapshotItem> {
         const dir = this.ensureLocalBackupsDir()
         const now = new Date()
         const filename = generateBackupFilename(now, trigger)
         const fullPath = path.join(dir, filename)
 
         // Read active raw configuration
-        const rawContent = this.config.readRaw()
-        fs.writeFileSync(fullPath, rawContent, 'utf8')
+        let payload = this.config.readRaw()
+        const isEncrypted = !!this.config.store?.syncAndBackup?.encryptionEnabled
+        const password = overridePassword || this.config.store?.syncAndBackup?.encryptionPassword
 
+        let encStatus: EncryptionStatus = 'unencrypted'
+
+        if (isEncrypted && password) {
+            payload = CryptoService.encrypt(payload, password)
+            encStatus = 'encrypted_matches'
+        }
+
+        fs.writeFileSync(fullPath, payload, 'utf8')
         const stats = fs.statSync(fullPath)
+
         const snapshot: BackupSnapshotItem = {
             id: filename,
             filename,
@@ -146,6 +179,7 @@ export class BackupService {
             sizeKb: Math.round((stats.size / 1024) * 10) / 10,
             trigger,
             location: 'local',
+            encryptionStatus: encStatus,
             fullPath,
         }
 
@@ -162,7 +196,7 @@ export class BackupService {
         return snapshot
     }
 
-    async restoreLocalBackup(filename: string): Promise<void> {
+    async restoreLocalBackup(filename: string, customPassword?: string): Promise<void> {
         const dir = this.ensureLocalBackupsDir()
         const fullPath = path.join(dir, filename)
 
@@ -170,16 +204,46 @@ export class BackupService {
             throw new Error(`Snapshot file not found: ${filename}`)
         }
 
-        // Create safety pre-restore backup first
+        const rawFileContent = fs.readFileSync(fullPath, 'utf8')
+        let targetConfigYaml = rawFileContent
+
+        if (CryptoService.isEncrypted(rawFileContent)) {
+            const passwordToUse = customPassword || this.config.store?.syncAndBackup?.encryptionPassword
+            if (!passwordToUse) {
+                throw new Error('PASSWORD_REQUIRED')
+            }
+            try {
+                targetConfigYaml = CryptoService.decrypt(rawFileContent, passwordToUse)
+            } catch (err: any) {
+                throw new Error('INVALID_PASSWORD')
+            }
+        }
+
+        // 1. Capture current plugin configuration so restoring an older Tabby snapshot
+        // never erases the user's master encryption password or sync targets.
+        const currentPluginConfig = this.config.store?.syncAndBackup
+            ? JSON.parse(JSON.stringify(this.config.store.syncAndBackup))
+            : null
+
+        // 2. Create safety pre-restore backup first
         try {
-            await this.createLocalBackup('Pre-Sync')
+            await this.createLocalBackup('Pre-Restore')
         } catch (e) {
             console.warn('[tabby-sync-and-backup] Safety backup failed before restore:', e)
         }
 
-        const rawContent = fs.readFileSync(fullPath, 'utf8')
-        await this.config.writeRaw(rawContent)
+        // 3. Write target config and reload Tabby config store
+        await this.config.writeRaw(targetConfigYaml)
         await this.config.load()
+
+        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist
+        if (currentPluginConfig) {
+            if (!this.config.store.syncAndBackup) {
+                this.config.store.syncAndBackup = {}
+            }
+            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
+            await this.config.save()
+        }
     }
 
     async deleteLocalBackup(filename: string): Promise<void> {
@@ -203,6 +267,35 @@ export class BackupService {
                 }
             }
         }
+    }
+
+    /**
+     * Batch re-encrypt all local encrypted backups when master password changes
+     */
+    async reEncryptAllLocalBackups(oldPass: string, newPass: string): Promise<{ successCount: number; failCount: number }> {
+        const dir = this.ensureLocalBackupsDir()
+        const files = fs.readdirSync(dir)
+        let successCount = 0
+        let failCount = 0
+
+        for (const file of files) {
+            if (file.startsWith('tabby-backup-') && file.endsWith('.yaml')) {
+                const fullPath = path.join(dir, file)
+                try {
+                    const content = fs.readFileSync(fullPath, 'utf8')
+                    if (CryptoService.isEncrypted(content)) {
+                        const updated = CryptoService.reEncrypt(content, oldPass, newPass)
+                        fs.writeFileSync(fullPath, updated, 'utf8')
+                        successCount++
+                    }
+                } catch (e) {
+                    console.error(`[tabby-sync-and-backup] Could not re-encrypt ${file}:`, e)
+                    failCount++
+                }
+            }
+        }
+
+        return { successCount, failCount }
     }
 
     // ==========================================
@@ -235,8 +328,18 @@ export class BackupService {
         return []
     }
 
-    async createRemoteBackup(trigger: 'Manual' | 'Pre-Sync' | 'Startup' = 'Manual'): Promise<BackupSnapshotItem> {
-        const rawContent = this.config.readRaw()
+    async createRemoteBackup(
+        trigger: BackupTrigger = 'Manual',
+        overridePassword?: string,
+    ): Promise<BackupSnapshotItem> {
+        let rawContent = this.config.readRaw()
+        const isEncrypted = !!this.config.store?.syncAndBackup?.encryptionEnabled
+        const password = overridePassword || this.config.store?.syncAndBackup?.encryptionPassword
+
+        if (isEncrypted && password) {
+            rawContent = CryptoService.encrypt(rawContent, password)
+        }
+
         const now = new Date()
         const filename = generateBackupFilename(now, trigger)
         const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
@@ -277,7 +380,7 @@ export class BackupService {
         await this.rotateRemoteBackups(maxToKeep)
     }
 
-    async restoreRemoteBackup(item: BackupSnapshotItem): Promise<void> {
+    async restoreRemoteBackup(item: BackupSnapshotItem, customPassword?: string): Promise<void> {
         const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
         let content = ''
 
@@ -291,15 +394,44 @@ export class BackupService {
             content = await this.downloadWebDAVFile(item.filename)
         }
 
-        // Create safety pre-restore backup first
+        let targetConfigYaml = content
+        if (CryptoService.isEncrypted(content)) {
+            const passwordToUse = customPassword || this.config.store?.syncAndBackup?.encryptionPassword
+            if (!passwordToUse) {
+                throw new Error('PASSWORD_REQUIRED')
+            }
+            try {
+                targetConfigYaml = CryptoService.decrypt(content, passwordToUse)
+            } catch {
+                throw new Error('INVALID_PASSWORD')
+            }
+        }
+
+        // 1. Capture current plugin configuration so restoring an older Tabby snapshot
+        // never erases the user's master encryption password or sync targets.
+        const currentPluginConfig = this.config.store?.syncAndBackup
+            ? JSON.parse(JSON.stringify(this.config.store.syncAndBackup))
+            : null
+
+        // 2. Create safety pre-restore backup first
         try {
-            await this.createLocalBackup('Pre-Sync')
+            await this.createLocalBackup('Pre-Restore')
         } catch (e) {
             console.warn('[tabby-sync-and-backup] Safety backup failed before remote restore:', e)
         }
 
-        await this.config.writeRaw(content)
+        // 3. Write target config and reload Tabby config store
+        await this.config.writeRaw(targetConfigYaml)
         await this.config.load()
+
+        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist
+        if (currentPluginConfig) {
+            if (!this.config.store.syncAndBackup) {
+                this.config.store.syncAndBackup = {}
+            }
+            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
+            await this.config.save()
+        }
     }
 
     async deleteRemoteBackup(filename: string): Promise<void> {
@@ -358,6 +490,7 @@ export class BackupService {
 
         const files = fs.readdirSync(remoteDir)
         const snapshots: BackupSnapshotItem[] = []
+        const currentPassword = this.config.store?.syncAndBackup?.encryptionPassword || ''
 
         for (const file of files) {
             if (file.startsWith('tabby-backup-') && file.endsWith('.yaml')) {
@@ -366,6 +499,19 @@ export class BackupService {
                     const stats = fs.statSync(fullPath)
                     const parsed = parseBackupFilename(file)
                     const ts = parsed.timestamp || stats.mtimeMs
+
+                    let encStatus: EncryptionStatus = 'unencrypted'
+                    try {
+                        const fd = fs.openSync(fullPath, 'r')
+                        const buf = Buffer.alloc(1024)
+                        const bytesRead = fs.readSync(fd, buf, 0, 1024, 0)
+                        fs.closeSync(fd)
+                        const sample = buf.toString('utf8', 0, bytesRead)
+                        encStatus = CryptoService.checkPassword(sample, currentPassword)
+                    } catch (e) {
+                        console.warn(`[tabby-sync-and-backup] Header check failed for remote ${file}:`, e)
+                    }
+
                     snapshots.push({
                         id: file,
                         filename: file,
@@ -374,6 +520,7 @@ export class BackupService {
                         sizeKb: Math.round((stats.size / 1024) * 10) / 10,
                         trigger: parsed.trigger,
                         location: 'remote',
+                        encryptionStatus: encStatus,
                         fullPath,
                     })
                 } catch (e) {
@@ -390,12 +537,14 @@ export class BackupService {
         filename: string,
         content: string,
         now: Date,
-        trigger: 'Manual' | 'Pre-Sync' | 'Startup',
+        trigger: BackupTrigger,
     ): Promise<BackupSnapshotItem> {
         const remoteDir = this.getRemoteLocalBackupsDir()
         const fullPath = path.join(remoteDir, filename)
         fs.writeFileSync(fullPath, content, 'utf8')
         const stats = fs.statSync(fullPath)
+        const currentPassword = this.config.store?.syncAndBackup?.encryptionPassword || ''
+        const encStatus = CryptoService.checkPassword(content, currentPassword)
 
         return {
             id: filename,
@@ -405,6 +554,7 @@ export class BackupService {
             sizeKb: Math.round((stats.size / 1024) * 10) / 10,
             trigger,
             location: 'remote',
+            encryptionStatus: encStatus,
             fullPath,
         }
     }
@@ -435,7 +585,7 @@ export class BackupService {
                 headers: this.getWebDAVAuthHeader(),
             })
         } catch {
-            // MKCOL returns 405 if collection already exists, which is fine
+            // MKCOL returns 405 if collection already exists
         }
     }
 
@@ -483,6 +633,7 @@ export class BackupService {
                     sizeKb: Math.round((sizeBytes / 1024) * 10) / 10,
                     trigger: parsed.trigger,
                     location: 'remote',
+                    encryptionStatus: 'encrypted_unknown', // Will be verified on restore or on demand
                     remoteUrl: `${baseUrl}${rawFilename}`,
                 })
             }
@@ -496,7 +647,7 @@ export class BackupService {
         filename: string,
         content: string,
         now: Date,
-        trigger: 'Manual' | 'Pre-Sync' | 'Startup',
+        trigger: BackupTrigger,
     ): Promise<BackupSnapshotItem> {
         await this.ensureWebDAVBackupsCollection()
         const fileUrl = `${this.getWebDAVBackupsUrl()}${filename}`
@@ -514,6 +665,9 @@ export class BackupService {
             throw new Error(`WebDAV PUT failed: HTTP ${response.status}`)
         }
 
+        const currentPassword = this.config.store?.syncAndBackup?.encryptionPassword || ''
+        const encStatus = CryptoService.checkPassword(content, currentPassword)
+
         return {
             id: filename,
             filename,
@@ -522,6 +676,7 @@ export class BackupService {
             sizeKb: Math.round((new Blob([content]).size / 1024) * 10) / 10,
             trigger,
             location: 'remote',
+            encryptionStatus: encStatus,
             remoteUrl: fileUrl,
         }
     }

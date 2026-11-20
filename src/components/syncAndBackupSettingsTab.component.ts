@@ -1,6 +1,7 @@
 import { Component, HostBinding, OnInit } from '@angular/core'
-import { ConfigService, NotificationsService, PlatformService } from 'tabby-core'
+import { ConfigService, HostAppService, NotificationsService, PlatformService } from 'tabby-core'
 import { BackupService, BackupSnapshotItem } from '../services/backup.service'
+import { CryptoService, EncryptionStatus } from '../services/crypto.service'
 import packageJson from '../../package.json'
 
 type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
@@ -18,9 +19,9 @@ interface UpdateInfo {
  * Features:
  * - 5 sub-navigation tabs (Sync, Backups, Security, Changelog, About)
  * - Dual backup engine: Local (in Tabby directory) and Remote (/backups on sync target)
- * - Remote Backups conditionally activated only when sync target is configured
- * - Remote and local retention policies with automatic rotation
- * - Explicit Save Settings bar
+ * - Real-time encryption verification in backup tables with zero performance impact
+ * - Safe password change workflow with confirmation and batch re-encryption of local backups
+ * - Prompt for historic passwords when restoring backups created under earlier keys
  */
 @Component({
     selector: 'sync-and-backup-settings-tab',
@@ -138,8 +139,8 @@ interface UpdateInfo {
                         <label class="form-label">Provider Type</label>
                         <select
                             class="form-select"
-                            [value]="formData.syncProvider"
-                            (change)="onFieldChange('syncProvider', $any($event.target).value)"
+                            [(ngModel)]="formData.syncProvider"
+                            (ngModelChange)="onFieldChange('syncProvider', $event)"
                         >
                             <option value="webdav">WebDAV (Nextcloud, ownCloud, custom server)</option>
                             <option value="local">Local Directory / Shared Folder (Syncthing, Dropbox, iCloud)</option>
@@ -253,14 +254,14 @@ interface UpdateInfo {
                         <label class="form-label">Sync Interval</label>
                         <select
                             class="form-select"
-                            [value]="formData.syncIntervalMinutes"
-                            (change)="onFieldChange('syncIntervalMinutes', $any($event.target).value)"
+                            [(ngModel)]="formData.syncIntervalMinutes"
+                            (ngModelChange)="onFieldChange('syncIntervalMinutes', $event)"
                         >
-                            <option [value]="5">Every 5 minutes</option>
-                            <option [value]="15">Every 15 minutes</option>
-                            <option [value]="30">Every 30 minutes (Recommended)</option>
-                            <option [value]="60">Every 1 hour</option>
-                            <option [value]="360">Every 6 hours</option>
+                            <option [ngValue]="5">Every 5 minutes</option>
+                            <option [ngValue]="15">Every 15 minutes</option>
+                            <option [ngValue]="30">Every 30 minutes (Recommended)</option>
+                            <option [ngValue]="60">Every 1 hour</option>
+                            <option [ngValue]="360">Every 6 hours</option>
                         </select>
                     </div>
 
@@ -281,6 +282,44 @@ interface UpdateInfo {
 
         <!-- ==================== TAB 2: BACKUPS ==================== -->
         <div [class.d-none]="activeTab !== 'backups'">
+            <!-- Optional Inline Prompt for Historic Backup Password -->
+            <div class="card border-warning mb-3" [class.d-none]="!promptRestoreSnapshot">
+                <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                    <span>🔑 Password Required: {{ promptRestoreSnapshot?.filename }}</span>
+                    <button type="button" class="btn-close" (click)="cancelPromptRestore()"></button>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted mb-2">
+                        This snapshot was encrypted with a different or previous master password. Enter the password used when this snapshot was created to decrypt and restore it.
+                    </p>
+                    <div class="input-group">
+                        <input
+                            [type]="showPromptPassword ? 'text' : 'password'"
+                            class="form-control"
+                            placeholder="Enter snapshot master password..."
+                            [value]="promptPasswordInput"
+                            (input)="promptPasswordInput = $any($event.target).value"
+                            (keyup.enter)="confirmRestoreWithPassword()"
+                        />
+                        <button
+                            type="button"
+                            class="btn btn-outline-secondary"
+                            (click)="showPromptPassword = !showPromptPassword"
+                        >
+                            {{ showPromptPassword ? '🙈' : '👁️' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            [disabled]="!promptPasswordInput"
+                            (click)="confirmRestoreWithPassword()"
+                        >
+                            Decrypt &amp; Restore
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Backup Policies Card -->
             <div class="card mb-3">
                 <div class="card-header fw-bold">Automated Snapshot Policies &amp; Retention</div>
@@ -318,13 +357,13 @@ interface UpdateInfo {
                         <label class="form-label">Retention Policy (Max snapshots to keep per location)</label>
                         <select
                             class="form-select"
-                            [value]="formData.maxBackupsToKeep"
-                            (change)="onFieldChange('maxBackupsToKeep', $any($event.target).value)"
+                            [(ngModel)]="formData.maxBackupsToKeep"
+                            (ngModelChange)="onFieldChange('maxBackupsToKeep', $event)"
                         >
-                            <option [value]="5">5 snapshots</option>
-                            <option [value]="10">10 snapshots (Recommended)</option>
-                            <option [value]="25">25 snapshots</option>
-                            <option [value]="50">50 snapshots</option>
+                            <option [ngValue]="5">5 snapshots</option>
+                            <option [ngValue]="10">10 snapshots (Recommended)</option>
+                            <option [ngValue]="25">25 snapshots</option>
+                            <option [ngValue]="50">50 snapshots</option>
                         </select>
                         <div class="form-text">
                             Older snapshots are automatically rotated and pruned on both local disk and remote storage.
@@ -414,52 +453,71 @@ interface UpdateInfo {
                         </div>
                         <div class="table-responsive" [class.d-none]="localBackups.length === 0">
                             <table class="table table-hover m-0 align-middle">
-                                <thead class="table-dark">
+                                <thead>
                                     <tr>
-                                        <th>Date &amp; Time</th>
-                                        <th>Trigger</th>
-                                        <th>Size</th>
-                                        <th class="text-end">Actions</th>
+                                        <th style="width: 170px;">Date &amp; Time</th>
+                                        <th style="width: 110px;">Trigger</th>
+                                        <th style="width: 150px;">Security</th>
+                                        <th style="width: 80px;">Size</th>
+                                        <th class="text-end" style="width: 220px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr *ngFor="let item of localBackups">
-                                        <td class="font-monospace small">{{ item.formattedDate }}</td>
-                                        <td>
+                                        <td class="font-monospace small text-nowrap">{{ item.formattedDate }}</td>
+                                        <td class="text-nowrap">
                                             <span
                                                 class="badge"
                                                 [class.bg-info]="item.trigger === 'Manual'"
                                                 [class.bg-warning]="item.trigger === 'Pre-Sync'"
                                                 [class.bg-secondary]="item.trigger === 'Startup'"
+                                                [class.bg-danger]="item.trigger === 'Pre-Restore'"
                                             >
                                                 {{ item.trigger }}
                                             </span>
                                         </td>
-                                        <td class="small">{{ item.sizeKb }} KB</td>
-                                        <td class="text-end">
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-primary me-2"
-                                                (click)="restoreLocalBackup(item)"
+                                        <td class="text-nowrap">
+                                            <span
+                                                class="badge"
+                                                [class.bg-secondary]="item.encryptionStatus === 'unencrypted'"
+                                                [class.bg-success]="item.encryptionStatus === 'encrypted_matches'"
+                                                [class.bg-warning]="item.encryptionStatus === 'encrypted_different'"
+                                                [class.text-dark]="item.encryptionStatus === 'encrypted_different'"
+                                                [class.bg-info]="item.encryptionStatus === 'encrypted_unknown'"
+                                                [title]="getEncryptionTooltip(item)"
                                             >
-                                                Restore
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-info me-2"
-                                                [disabled]="!isSyncConfigured()"
-                                                [title]="isSyncConfigured() ? 'Upload to remote /backups/' : 'Configure Sync first to upload'"
-                                                (click)="uploadLocalToRemote(item)"
-                                            >
-                                                ☁️ Upload
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-danger"
-                                                (click)="deleteLocalBackup(item)"
-                                            >
-                                                Delete
-                                            </button>
+                                                {{ getEncryptionLabel(item) }}
+                                            </span>
+                                        </td>
+                                        <td class="small text-nowrap">{{ item.sizeKb }} KB</td>
+                                        <td class="text-end text-nowrap">
+                                            <div class="d-inline-flex gap-1 align-items-center justify-content-end flex-nowrap">
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-primary py-1 px-2 text-nowrap"
+                                                    title="Restore configuration snapshot"
+                                                    (click)="restoreLocalBackup(item)"
+                                                >
+                                                    ↩️ Restore
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-info py-1 px-2 text-nowrap"
+                                                    [disabled]="!isSyncConfigured()"
+                                                    [title]="isSyncConfigured() ? 'Upload to remote /backups/' : 'Configure Sync first to upload'"
+                                                    (click)="uploadLocalToRemote(item)"
+                                                >
+                                                    ☁️ Upload
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-danger py-1 px-2 text-nowrap"
+                                                    title="Delete local snapshot"
+                                                    (click)="deleteLocalBackup(item)"
+                                                >
+                                                    🗑️ Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -507,43 +565,62 @@ interface UpdateInfo {
                         </div>
                         <div class="table-responsive" [class.d-none]="isLoadingBackups || remoteBackups.length === 0">
                             <table class="table table-hover m-0 align-middle">
-                                <thead class="table-dark">
+                                <thead>
                                     <tr>
-                                        <th>Date &amp; Time</th>
-                                        <th>Trigger</th>
-                                        <th>Size</th>
-                                        <th class="text-end">Actions</th>
+                                        <th style="width: 170px;">Date &amp; Time</th>
+                                        <th style="width: 110px;">Trigger</th>
+                                        <th style="width: 150px;">Security</th>
+                                        <th style="width: 80px;">Size</th>
+                                        <th class="text-end" style="width: 180px;">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr *ngFor="let item of remoteBackups">
-                                        <td class="font-monospace small">{{ item.formattedDate }}</td>
-                                        <td>
+                                        <td class="font-monospace small text-nowrap">{{ item.formattedDate }}</td>
+                                        <td class="text-nowrap">
                                             <span
                                                 class="badge"
                                                 [class.bg-info]="item.trigger === 'Manual'"
                                                 [class.bg-warning]="item.trigger === 'Pre-Sync'"
                                                 [class.bg-secondary]="item.trigger === 'Startup'"
+                                                [class.bg-danger]="item.trigger === 'Pre-Restore'"
                                             >
                                                 {{ item.trigger }}
                                             </span>
                                         </td>
-                                        <td class="small">{{ item.sizeKb }} KB</td>
-                                        <td class="text-end">
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-primary me-2"
-                                                (click)="restoreRemoteBackup(item)"
+                                        <td class="text-nowrap">
+                                            <span
+                                                class="badge"
+                                                [class.bg-secondary]="item.encryptionStatus === 'unencrypted'"
+                                                [class.bg-success]="item.encryptionStatus === 'encrypted_matches'"
+                                                [class.bg-warning]="item.encryptionStatus === 'encrypted_different'"
+                                                [class.text-dark]="item.encryptionStatus === 'encrypted_different'"
+                                                [class.bg-info]="item.encryptionStatus === 'encrypted_unknown'"
+                                                [title]="getEncryptionTooltip(item)"
                                             >
-                                                ⬇️ Restore
-                                            </button>
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-danger"
-                                                (click)="deleteRemoteBackup(item)"
-                                            >
-                                                Delete
-                                            </button>
+                                                {{ getEncryptionLabel(item) }}
+                                            </span>
+                                        </td>
+                                        <td class="small text-nowrap">{{ item.sizeKb }} KB</td>
+                                        <td class="text-end text-nowrap">
+                                            <div class="d-inline-flex gap-1 align-items-center justify-content-end flex-nowrap">
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-primary py-1 px-2 text-nowrap"
+                                                    title="Download and restore remote snapshot"
+                                                    (click)="restoreRemoteBackup(item)"
+                                                >
+                                                    ⬇️ Restore
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn-sm btn-outline-danger py-1 px-2 text-nowrap"
+                                                    title="Delete remote snapshot"
+                                                    (click)="deleteRemoteBackup(item)"
+                                                >
+                                                    🗑️ Delete
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -557,7 +634,7 @@ interface UpdateInfo {
         <!-- ==================== TAB 3: SECURITY ==================== -->
         <div [class.d-none]="activeTab !== 'security'">
             <div class="card mb-3">
-                <div class="card-header fw-bold">Payload Encryption (AES-256-GCM)</div>
+                <div class="card-header fw-bold">Payload &amp; Backup Encryption (AES-256-GCM)</div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input
@@ -568,26 +645,140 @@ interface UpdateInfo {
                             (change)="onFieldChange('encryptionEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableEncryptionCheck">
-                            Encrypt payload before uploading to remote storage
+                            Encrypt backups and sync payload with master password
                         </label>
                         <div class="text-muted small">
-                            Protects SSH passwords, tokens, and server IP addresses with authenticated client-side AES-256.
+                            Protects SSH passwords, tokens, and server IP addresses with authenticated client-side AES-256-GCM.
                         </div>
                     </div>
 
+                    <!-- Encryption Configuration Panel -->
                     <div [class.d-none]="!formData.encryptionEnabled">
-                        <div class="mb-3">
-                            <label class="form-label">Master Encryption Password</label>
-                            <input
-                                type="password"
-                                class="form-control"
-                                placeholder="Enter strong master password..."
-                                [value]="formData.encryptionPassword"
-                                (input)="onFieldChange('encryptionPassword', $any($event.target).value)"
-                            />
-                            <div class="form-text text-warning">
-                                ⚠️ <strong>Important:</strong> If you lose this password, your cloud-stored settings cannot be recovered.
+                        <!-- Case 1: Password already established -->
+                        <div class="mb-3" [class.d-none]="!hasSavedPassword">
+                            <div class="alert alert-success d-flex justify-content-between align-items-center mb-3">
+                                <div>
+                                    <div class="fw-bold">🔒 Master Password Configured</div>
+                                    <div class="small text-muted">
+                                        New backups and remote sync payloads are encrypted with AES-256-GCM.
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    (click)="isChangingPassword = !isChangingPassword"
+                                >
+                                    {{ isChangingPassword ? 'Cancel Change' : '🔑 Change Master Password' }}
+                                </button>
                             </div>
+                        </div>
+
+                        <!-- Case 2: Setting password for first time OR Changing existing password -->
+                        <div [class.d-none]="hasSavedPassword && !isChangingPassword" class="p-3 border rounded mb-3 security-box">
+                            <h6 class="fw-bold mb-3">
+                                {{ hasSavedPassword ? '🔑 Change Master Password' : '🔑 Set Initial Master Password' }}
+                            </h6>
+
+                            <!-- Old password verification when changing -->
+                            <div class="mb-3" [class.d-none]="!hasSavedPassword">
+                                <label class="form-label">Current Master Password</label>
+                                <div class="input-group">
+                                    <input
+                                        [type]="showOldPassword ? 'text' : 'password'"
+                                        class="form-control"
+                                        placeholder="Enter current password to verify..."
+                                        [value]="oldPasswordInput"
+                                        (input)="oldPasswordInput = $any($event.target).value"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary"
+                                        (click)="showOldPassword = !showOldPassword"
+                                    >
+                                        {{ showOldPassword ? '🙈' : '👁️' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">New Master Password</label>
+                                    <div class="input-group">
+                                        <input
+                                            [type]="showNewPassword ? 'text' : 'password'"
+                                            class="form-control"
+                                            placeholder="Enter strong password (min 6 chars)..."
+                                            [value]="newPasswordInput"
+                                            (input)="onNewPasswordInput($any($event.target).value)"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline-secondary"
+                                            (click)="showNewPassword = !showNewPassword"
+                                        >
+                                            {{ showNewPassword ? '🙈' : '👁️' }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Confirm New Password</label>
+                                    <div class="input-group">
+                                        <input
+                                            [type]="showConfirmPassword ? 'text' : 'password'"
+                                            class="form-control"
+                                            placeholder="Repeat new password..."
+                                            [value]="confirmPasswordInput"
+                                            (input)="onConfirmPasswordInput($any($event.target).value)"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline-secondary"
+                                            (click)="showConfirmPassword = !showConfirmPassword"
+                                        >
+                                            {{ showConfirmPassword ? '🙈' : '👁️' }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Live Password Matching & Strength Feedback -->
+                            <div class="mb-3">
+                                <div class="small fw-semibold" [class.d-none]="passwordsMatch || !confirmPasswordInput" style="color: #ff6b6b !important;">
+                                    ✗ Passwords do not match.
+                                </div>
+                                <div class="small fw-semibold" [class.d-none]="!passwordsMatch || !newPasswordInput" style="color: #20c997 !important;">
+                                    ✓ Passwords match.
+                                </div>
+                                <div class="small" [class.d-none]="!newPasswordInput || newPasswordInput.length >= 6" style="color: #ffc107 !important;">
+                                    ⚠️ Password should be at least 6 characters long.
+                                </div>
+                            </div>
+
+                            <!-- Re-encryption of existing backups checkbox -->
+                            <div class="form-check mb-3">
+                                <input
+                                    class="form-check-input"
+                                    type="checkbox"
+                                    id="reEncryptLocalCheck"
+                                    [checked]="reEncryptLocalBackups"
+                                    (change)="reEncryptLocalBackups = $any($event.target).checked"
+                                />
+                                <label class="form-check-label small" for="reEncryptLocalCheck">
+                                    <strong>Update existing local backups</strong> to the new password automatically
+                                </label>
+                                <div class="text-muted small">
+                                    Decrypts your local snapshots with the previous password and re-encrypts them with the new one.
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                [disabled]="!canApplyPassword()"
+                                (click)="applyPasswordUpdate()"
+                            >
+                                {{ hasSavedPassword ? 'Apply New Password' : 'Set Master Password' }}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -623,18 +814,20 @@ interface UpdateInfo {
                     </button>
                 </div>
                 <div class="card-body">
-                    <!-- Current / Unreleased -->
+                    <!-- v0.2.0 -->
                     <div class="mb-4">
                         <div class="d-flex align-items-center gap-2 mb-2">
-                            <span class="badge bg-primary">v0.2.0 (In Development)</span>
-                            <span class="text-muted small">Upcoming Release</span>
+                            <span class="badge bg-success">v0.2.0</span>
+                            <span class="text-muted small">2026-11-21 (Latest Release)</span>
                         </div>
                         <ul class="mb-0">
+                            <li><strong>AES-256-GCM Backup Encryption</strong>: Full payload encryption with instant verification badges (Plain, Protected, Other Key).</li>
+                            <li><strong>Safe Password Workflow</strong>: Password confirmation, eye toggles, match validation, and batch re-encryption of local backups.</li>
+                            <li><strong>Historic Password Support</strong>: Seamless restore dialog for snapshots encrypted with earlier master passwords.</li>
                             <li><strong>Local &amp; Remote Backups Engine</strong>: Dual snapshot management supporting local storage in Tabby config directory and remote storage under <code>/backups/</code>.</li>
-                            <li><strong>Conditional Remote Activation</strong>: Remote backups are activated only when a valid sync target is configured.</li>
-                            <li><strong>Dual Retention Policy &amp; Rotation</strong>: Automated pruning and rotation of both local and remote snapshots when the limit is exceeded.</li>
-                            <li><strong>Explicit Save Workflow</strong>: Settings modifications require clicking "Save Settings" rather than auto-saving immediately.</li>
-                            <li><strong>Streamlined Storage Providers</strong>: Focused WebDAV and Local Directory synchronization targets.</li>
+                            <li><strong>Pre-Restore Safety Snapshot &amp; Restart</strong>: Automatic safety backup and application restart upon configuration restore.</li>
+                            <li><strong>Settings Persistence Protection</strong>: Restoring older snapshots preserves current master passwords and sync targets.</li>
+                            <li><strong>Dual Retention Policy &amp; Rotation</strong>: Automated pruning and rotation of both local and remote snapshots based on max retention limit.</li>
                         </ul>
                     </div>
 
@@ -757,6 +950,71 @@ interface UpdateInfo {
                 background-color: rgba(255, 255, 255, 0.05);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             }
+            .security-box {
+                background: rgba(0, 0, 0, 0.25) !important;
+                border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            }
+            .security-box .form-label,
+            .security-box h6,
+            .security-box label,
+            .security-box strong {
+                color: rgba(255, 255, 255, 0.9) !important;
+            }
+            .security-box .text-muted {
+                color: rgba(255, 255, 255, 0.6) !important;
+            }
+            .security-box .input-group .btn-outline-secondary {
+                border-color: rgba(255, 255, 255, 0.2) !important;
+                color: rgba(255, 255, 255, 0.85) !important;
+                background: rgba(255, 255, 255, 0.08) !important;
+            }
+            .security-box .input-group .btn-outline-secondary:hover {
+                background: rgba(255, 255, 255, 0.18) !important;
+                color: #ffffff !important;
+            }
+            .security-box .input-group .form-control {
+                background: rgba(0, 0, 0, 0.35) !important;
+                border-color: rgba(255, 255, 255, 0.2) !important;
+                color: #ffffff !important;
+            }
+            .security-box .input-group .form-control:focus {
+                border-color: #0d6efd !important;
+                box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
+            }
+            .alert-success {
+                background-color: rgba(25, 135, 84, 0.18) !important;
+                border-color: rgba(25, 135, 84, 0.4) !important;
+                color: #75b798 !important;
+            }
+            .table-responsive {
+                overflow-x: auto;
+            }
+            .table th, .table td {
+                white-space: nowrap !important;
+                vertical-align: middle !important;
+            }
+            .table thead th {
+                background: rgba(255, 255, 255, 0.05) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+                color: rgba(255, 255, 255, 0.75) !important;
+                font-size: 0.82rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                padding: 10px 12px;
+            }
+            .table tbody td {
+                padding: 8px 12px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+            }
+            .table tbody tr:hover td {
+                background-color: rgba(255, 255, 255, 0.03) !important;
+            }
+            .table .badge {
+                font-weight: 500;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 0.75rem;
+            }
         `,
     ],
 })
@@ -789,14 +1047,38 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     isLoadingBackups: boolean = false
     remoteTargetDescription: string = ''
 
+    // Security Form State
+    isChangingPassword: boolean = false
+    oldPasswordInput: string = ''
+    newPasswordInput: string = ''
+    confirmPasswordInput: string = ''
+    showOldPassword: boolean = false
+    showNewPassword: boolean = false
+    showConfirmPassword: boolean = false
+    reEncryptLocalBackups: boolean = true
+
+    // Restore Prompt Modal State
+    promptRestoreSnapshot: BackupSnapshotItem | null = null
+    promptPasswordInput: string = ''
+    showPromptPassword: boolean = false
+
     isCheckingUpdates: boolean = false
     hasCheckedUpdates: boolean = false
     updateInfo: UpdateInfo | null = null
+
+    get hasSavedPassword(): boolean {
+        return !!(this.formData.encryptionPassword && this.formData.encryptionPassword.trim())
+    }
+
+    get passwordsMatch(): boolean {
+        return !!this.newPasswordInput && this.newPasswordInput === this.confirmPasswordInput
+    }
 
     constructor(
         public config: ConfigService,
         private notifications: NotificationsService,
         private platform: PlatformService,
+        private hostApp: HostAppService,
         private backupService: BackupService,
     ) {}
 
@@ -823,6 +1105,10 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             encryptionPassword: saved.encryptionPassword || '',
         }
         this.isDirty = false
+        this.isChangingPassword = false
+        this.oldPasswordInput = ''
+        this.newPasswordInput = ''
+        this.confirmPasswordInput = ''
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
     }
 
@@ -838,7 +1124,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     onFieldChange(field: string, value: any): void {
         if (field === 'syncIntervalMinutes' || field === 'maxBackupsToKeep') {
-            this.formData[field] = parseInt(value, 10)
+            this.formData[field] = typeof value === 'string' ? (parseInt(value, 10) || 10) : value
         } else {
             this.formData[field] = value
         }
@@ -854,7 +1140,17 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         await this.config.save()
         this.isDirty = false
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+
+        // Apply retention policy immediately to local and remote snapshots
+        if (this.formData.maxBackupsToKeep) {
+            await this.backupService.rotateLocalBackups(this.formData.maxBackupsToKeep)
+            if (this.isSyncConfigured()) {
+                await this.backupService.rotateRemoteBackups(this.formData.maxBackupsToKeep)
+            }
+        }
+
         this.notifications.notice('Sync & Backup settings saved successfully!')
+        await this.loadLocalBackups()
     }
 
     discardChanges(): void {
@@ -878,6 +1174,92 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             this.loadLocalBackups()
         } else if (this.isSyncConfigured()) {
             this.loadRemoteBackups()
+        }
+    }
+
+    // ==========================================
+    // SECURITY & PASSWORD MANAGEMENT
+    // ==========================================
+
+    onNewPasswordInput(val: string): void {
+        this.newPasswordInput = val
+    }
+
+    onConfirmPasswordInput(val: string): void {
+        this.confirmPasswordInput = val
+    }
+
+    canApplyPassword(): boolean {
+        if (!this.newPasswordInput || this.newPasswordInput.length < 6) return false
+        if (this.newPasswordInput !== this.confirmPasswordInput) return false
+        if (this.hasSavedPassword && !this.oldPasswordInput) return false
+        return true
+    }
+
+    async applyPasswordUpdate(): Promise<void> {
+        if (!this.canApplyPassword()) return
+
+        const currentSavedPassword = this.formData.encryptionPassword || ''
+
+        // Verify old password if one was set
+        if (this.hasSavedPassword && this.oldPasswordInput !== currentSavedPassword) {
+            this.notifications.error('Current master password verification failed!')
+            return
+        }
+
+        const newPass = this.newPasswordInput
+        const oldPass = this.oldPasswordInput || currentSavedPassword
+
+        // 1. Re-encrypt local backups if checked
+        if (this.reEncryptLocalBackups && this.hasSavedPassword && oldPass) {
+            try {
+                const res = await this.backupService.reEncryptAllLocalBackups(oldPass, newPass)
+                this.notifications.notice(`Re-encrypted ${res.successCount} local backup(s) with new password!`)
+            } catch (err: any) {
+                this.notifications.error(`Failed to re-encrypt some backups: ${err?.message || err}`)
+            }
+        }
+
+        // 2. Update form and config
+        this.formData.encryptionPassword = newPass
+        this.formData.encryptionEnabled = true
+        await this.saveSettings()
+
+        this.isChangingPassword = false
+        this.oldPasswordInput = ''
+        this.newPasswordInput = ''
+        this.confirmPasswordInput = ''
+        this.notifications.notice('Master encryption password updated successfully!')
+        await this.loadLocalBackups()
+    }
+
+    getEncryptionLabel(item: BackupSnapshotItem): string {
+        switch (item.encryptionStatus) {
+            case 'unencrypted':
+                return '📄 Plain'
+            case 'encrypted_matches':
+                return '🔓 Encrypted (OK)'
+            case 'encrypted_different':
+                return '🔒 Encrypted (Other Key)'
+            case 'encrypted_unknown':
+                return '🔒 Encrypted'
+            default:
+                return 'Unknown'
+        }
+    }
+
+    getEncryptionTooltip(item: BackupSnapshotItem): string {
+        switch (item.encryptionStatus) {
+            case 'unencrypted':
+                return 'Unencrypted standard YAML file.'
+            case 'encrypted_matches':
+                return 'Encrypted with AES-256-GCM. Verified to match current master password.'
+            case 'encrypted_different':
+                return 'Encrypted with a different/previous password. You will be prompted for that password when restoring.'
+            case 'encrypted_unknown':
+                return 'Encrypted remote payload.'
+            default:
+                return ''
         }
     }
 
@@ -937,27 +1319,98 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         }
     }
 
+    private async confirmRestoreAction(formattedDate: string): Promise<boolean> {
+        const res = await this.platform.showMessageBox({
+            type: 'warning',
+            message: `Restore configuration snapshot (${formattedDate})?`,
+            detail: 'Restoring will replace your current Tabby configuration.\n\nA safety backup (Pre-Restore) will be created automatically before restoring.\n\nTabby will restart immediately after restoring to apply changes.',
+            buttons: ['Restore & Restart', 'Cancel'],
+            defaultId: 0,
+            cancelId: 1,
+        })
+        return res.response === 0
+    }
+
     async restoreLocalBackup(item: BackupSnapshotItem): Promise<void> {
         try {
+            const confirmed = await this.confirmRestoreAction(item.formattedDate)
+            if (!confirmed) return
+
             await this.backupService.restoreLocalBackup(item.filename)
             await this.loadLocalBackups()
-            this.notifications.notice(`Configuration successfully restored from ${item.formattedDate}!`)
+            this.notifications.notice(`Configuration successfully restored! Restarting Tabby...`)
+            setTimeout(() => {
+                this.hostApp.relaunch()
+            }, 800)
         } catch (e: any) {
-            this.notifications.error(`Failed to restore local backup: ${e?.message || e}`)
+            if (e?.message === 'PASSWORD_REQUIRED' || e?.message === 'INVALID_PASSWORD') {
+                this.promptRestoreSnapshot = item
+                this.promptPasswordInput = ''
+                this.notifications.info(`Please enter the master password for ${item.filename}`)
+            } else {
+                this.notifications.error(`Failed to restore local backup: ${e?.message || e}`)
+            }
         }
     }
 
     async restoreRemoteBackup(item: BackupSnapshotItem): Promise<void> {
         this.isLoadingBackups = true
         try {
+            const confirmed = await this.confirmRestoreAction(item.formattedDate)
+            if (!confirmed) {
+                this.isLoadingBackups = false
+                return
+            }
+
             await this.backupService.restoreRemoteBackup(item)
             await this.loadLocalBackups()
-            this.notifications.notice(`Configuration successfully restored from remote snapshot (${item.formattedDate})!`)
+            this.notifications.notice(`Configuration successfully restored from remote snapshot! Restarting Tabby...`)
+            setTimeout(() => {
+                this.hostApp.relaunch()
+            }, 800)
         } catch (e: any) {
-            this.notifications.error(`Failed to restore remote backup: ${e?.message || e}`)
+            if (e?.message === 'PASSWORD_REQUIRED' || e?.message === 'INVALID_PASSWORD') {
+                this.promptRestoreSnapshot = item
+                this.promptPasswordInput = ''
+                this.notifications.info(`Please enter the master password for ${item.filename}`)
+            } else {
+                this.notifications.error(`Failed to restore remote backup: ${e?.message || e}`)
+            }
         } finally {
             this.isLoadingBackups = false
         }
+    }
+
+    async confirmRestoreWithPassword(): Promise<void> {
+        if (!this.promptRestoreSnapshot || !this.promptPasswordInput) return
+
+        const item = this.promptRestoreSnapshot
+        const pass = this.promptPasswordInput
+
+        const confirmed = await this.confirmRestoreAction(item.formattedDate)
+        if (!confirmed) return
+
+        try {
+            if (item.location === 'local') {
+                await this.backupService.restoreLocalBackup(item.filename, pass)
+            } else {
+                await this.backupService.restoreRemoteBackup(item, pass)
+            }
+            this.notifications.notice(`Configuration restored! Restarting Tabby...`)
+            this.promptRestoreSnapshot = null
+            this.promptPasswordInput = ''
+            await this.loadLocalBackups()
+            setTimeout(() => {
+                this.hostApp.relaunch()
+            }, 800)
+        } catch (e: any) {
+            this.notifications.error('Decryption failed: Incorrect password.')
+        }
+    }
+
+    cancelPromptRestore(): void {
+        this.promptRestoreSnapshot = null
+        this.promptPasswordInput = ''
     }
 
     async uploadLocalToRemote(item: BackupSnapshotItem): Promise<void> {

@@ -9,10 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-21
+
 ### Added
 - Modular sub-navigation tabs in Settings (`Sync`, `Backups`, `Security`, `Changelog`, `About`).
 - Storage provider selector with dedicated configuration panels for WebDAV and Local Directory.
 - Dual-target backup engine (`BackupService`) supporting local snapshots (in Tabby config directory) and remote snapshots (`/backups` on WebDAV or local directory).
+- Cryptographic security engine (`CryptoService`) utilizing authenticated AES-256-GCM and PBKDF2 (10,000 iterations).
+- Self-contained encrypted backup container format (`TABBY_ENC_V1`) with 16-byte fast verifier block allowing zero-overhead password match verification without decrypting full payloads.
+- Real-time encryption verification badges in backup tables (`📄 Plain`, `🔓 Encrypted (OK)`, `🔒 Encrypted (Other Key)`).
+- Safe Master Password workflow with current password verification, confirmation match indicator, eye toggles, and optional batch re-encryption of existing local snapshots.
+- Historic password restore workflow: prompt modal allowing restoration of snapshots created under earlier master passwords.
+- Confirmation dialog (`PlatformService.showMessageBox`) before configuration restore with notice of application restart.
+- Automatic application relaunch (`HostAppService.relaunch()`) following snapshot restoration.
+- Distinct `Pre-Restore` trigger classification and visual badge for safety snapshots.
 - Automated retention policy rotation for both local and remote snapshots based on `maxBackupsToKeep`.
 - Safety pre-restore snapshot generation preventing configuration loss during restores.
 - Segmented UI switcher between Local Backups and Remote Backups with live status, upload, restore, and deletion actions.
@@ -32,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed duplicate 'v' prefix in GitHub Actions release title.
 - Fixed snapshot table list rendering by importing Angular CommonModule and FormsModule into root NgModule.
+- Fixed contrast and background color issues in Security settings panel to conform to Tabby dark theme styling.
+- Fixed header parsing in `CryptoService.checkPassword` to extract metadata from snippet buffers without failing `JSON.parse`, eliminating false "Encrypted (Other Key)" badges.
+- Fixed snapshot restore engine to preserve active `syncAndBackup` settings, ensuring master encryption passwords and credentials are never erased when restoring older configurations.
+- Fixed safety backup trigger naming to `Pre-Restore` instead of `Pre-Sync`.
+- Fixed snapshot table layout and button wrapping with strict `white-space: nowrap`, fixed column sizing, and inline flex action groups.
+- Fixed `<select>` two-way data binding in Settings (`maxBackupsToKeep`, `syncIntervalMinutes`, `syncProvider`) by utilizing Angular `[(ngModel)]` with `[ngValue]` directives.
+- Added immediate retention policy rotation on saving settings with modified `maxBackupsToKeep`.
 
 ---
 
