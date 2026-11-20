@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Modular sub-navigation tabs in Settings (Sync, Backups, Security, Changelog, About).
 
+### Fixed
+- Fixed duplicate 'v' prefix in GitHub Actions release title.
+
 ---
 
 ## [0.1.0] - 2026-11-20
