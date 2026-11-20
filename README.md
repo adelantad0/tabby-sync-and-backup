@@ -14,6 +14,15 @@ Two-in-one synchronization and automated backup tool for [Tabby Terminal](https:
 - **Multiple Storage Targets**: Support for storage backends such as GitHub Gist, WebDAV, and local/network directories.
 - **Vault Compatibility**: Designed to respect Tabby encrypted secrets and configuration structures.
 
+## Settings & Sub-tabs
+
+Under **Settings -> Sync & Backup**, the plugin provides five dedicated sections:
+1. **🔄 Sync**: Storage provider selection (GitHub Gist, WebDAV, Local directory), schedule intervals, and manual sync/upload/download controls.
+2. **🛡️ Backups**: Automated pre-sync & startup snapshot policies, max retention settings, and interactive snapshot restoration table.
+3. **🔐 Security**: Client-side AES-256 payload encryption with master passphrase and Tabby Vault status.
+4. **📜 Changelog**: In-app version history and release notes viewer.
+5. **ℹ️ About**: Plugin information, dynamic version display, update checking, and issue reporting links.
+
 ## Installation
 
 ### Via Tabby Plugin Manager

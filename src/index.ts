@@ -90,14 +90,25 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
             // Sync settings
             syncEnabled: false,
             syncIntervalMinutes: 30,
-            syncProvider: 'gist', // 'gist' | 'webdav' | 'custom'
+            syncProvider: 'gist', // 'gist' | 'webdav' | 'local'
+            gistToken: '',
+            gistId: '',
+            webdavUrl: '',
+            webdavUsername: '',
+            webdavPassword: '',
+            webdavPath: '/tabby-config.yaml',
+            localSyncPath: '',
             lastSyncedAt: null,
 
             // Backup settings
             backupEnabled: true,
+            backupOnStartup: true,
             maxBackupsToKeep: 10,
-            backupLocation: 'local', // 'local' | 'cloud'
             lastBackupAt: null,
+
+            // Security settings
+            encryptionEnabled: false,
+            encryptionPassword: '',
         },
     }
 }
