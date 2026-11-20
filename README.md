@@ -11,13 +11,13 @@ Two-in-one synchronization and automated backup tool for [Tabby Terminal](https:
 - **Bidirectional Settings Sync**: Share terminal profiles, color themes, and custom hotkeys across macOS, Linux, and Windows.
 - **Automated Snapshots**: Create local backup copies of `config.yaml` prior to synchronization operations.
 - **Rollback Support**: Restore previous configuration states if needed.
-- **Multiple Storage Targets**: Support for storage backends such as GitHub Gist, WebDAV, and local/network directories.
+- **Multiple Storage Targets**: Support for storage backends such as WebDAV (Nextcloud, ownCloud) and local/network directories (Syncthing, Dropbox, iCloud).
 - **Vault Compatibility**: Designed to respect Tabby encrypted secrets and configuration structures.
 
 ## Settings & Sub-tabs
 
 Under **Settings -> Sync & Backup**, the plugin provides five dedicated sections:
-1. **🔄 Sync**: Storage provider selection (GitHub Gist, WebDAV, Local directory), schedule intervals, and manual sync/upload/download controls.
+1. **🔄 Sync**: Storage provider selection (WebDAV, Local directory), schedule intervals, explicit "Save Settings" workflow, and manual sync controls.
 2. **🛡️ Backups**: Automated pre-sync & startup snapshot policies, max retention settings, and interactive snapshot restoration table.
 3. **🔐 Security**: Client-side AES-256 payload encryption with master passphrase and Tabby Vault status.
 4. **📜 Changelog**: In-app version history and release notes viewer.

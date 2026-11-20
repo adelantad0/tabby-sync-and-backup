@@ -1,4 +1,4 @@
-import { Component, HostBinding } from '@angular/core'
+import { Component, HostBinding, OnInit } from '@angular/core'
 import { ConfigService, NotificationsService, PlatformService } from 'tabby-core'
 import packageJson from '../../package.json'
 
@@ -23,6 +23,7 @@ interface BackupSnapshotItem {
 /**
  * Modular Settings Tab Component for Tabby Sync & Backup
  * Features 5 sub-navigation sections: Sync, Backups, Security, Changelog, and About.
+ * Explicit "Save Settings" workflow protects configuration integrity.
  */
 @Component({
     selector: 'sync-and-backup-settings-tab',
@@ -36,6 +37,41 @@ interface BackupSnapshotItem {
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-primary text-uppercase">v{{ pluginVersion }}</span>
+            </div>
+        </div>
+
+        <!-- Sticky / Prominent Save Bar when settings are modified -->
+        <div
+            class="d-flex align-items-center justify-content-between p-3 mb-3 rounded"
+            [style.background]="isDirty ? 'rgba(255, 193, 7, 0.12)' : 'rgba(255, 255, 255, 0.04)'"
+            [style.border]="isDirty ? '1px solid rgba(255, 193, 7, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)'"
+        >
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark" [class.d-none]="!isDirty">⚠️ Unsaved Changes</span>
+                <span class="badge bg-secondary" [class.d-none]="isDirty">✓ All changes saved</span>
+                <span class="text-muted small">
+                    {{ isDirty ? 'You have unsaved changes. Click Save to persist them.' : 'Settings are saved on disk.' }}
+                </span>
+            </div>
+            <div class="d-flex gap-2">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    [disabled]="!isDirty"
+                    (click)="discardChanges()"
+                >
+                    Discard
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-sm"
+                    [class.btn-warning]="isDirty"
+                    [class.btn-primary]="!isDirty"
+                    [disabled]="!isDirty"
+                    (click)="saveSettings()"
+                >
+                    💾 Save Settings
+                </button>
             </div>
         </div>
 
@@ -105,65 +141,31 @@ interface BackupSnapshotItem {
                         <label class="form-label">Provider Type</label>
                         <select
                             class="form-select"
-                            [value]="config.store?.syncAndBackup?.syncProvider || 'gist'"
-                            (change)="onProviderChange($event)"
+                            [value]="formData.syncProvider"
+                            (change)="onFieldChange('syncProvider', $any($event.target).value)"
                         >
-                            <option value="gist">GitHub Gist (Secret Gist)</option>
-                            <option value="webdav">WebDAV (Nextcloud, ownCloud, custom)</option>
-                            <option value="local">Local Directory / Shared Folder</option>
+                            <option value="webdav">WebDAV (Nextcloud, ownCloud, custom server)</option>
+                            <option value="local">Local Directory / Shared Folder (Syncthing, Dropbox, iCloud)</option>
                         </select>
                         <div class="form-text">
-                            Select where your configuration payload will be stored and synchronized.
-                        </div>
-                    </div>
-
-                    <!-- GitHub Gist Settings -->
-                    <div [class.d-none]="(config.store?.syncAndBackup?.syncProvider || 'gist') !== 'gist'">
-                        <div class="mb-3">
-                            <label class="form-label">GitHub Personal Access Token (classic or fine-grained)</label>
-                            <input
-                                type="password"
-                                class="form-control"
-                                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                                [value]="config.store?.syncAndBackup?.gistToken || ''"
-                                (input)="onConfigInput('gistToken', $event)"
-                            />
-                            <div class="form-text">
-                                Requires <code>gist</code> scope to create and update secret gists.
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Gist ID</label>
-                            <div class="input-group">
-                                <input
-                                    type="text"
-                                    class="form-control"
-                                    placeholder="Leave empty to auto-create on first sync"
-                                    [value]="config.store?.syncAndBackup?.gistId || ''"
-                                    (input)="onConfigInput('gistId', $event)"
-                                />
-                                <button type="button" class="btn btn-outline-secondary" (click)="autoCreateGist()">
-                                    Auto-Create
-                                </button>
-                            </div>
-                            <div class="form-text">
-                                The unique hash identifier of your GitHub Gist.
-                            </div>
+                            Select the target storage provider where your configuration payload will be synchronized.
                         </div>
                     </div>
 
                     <!-- WebDAV Settings -->
-                    <div [class.d-none]="config.store?.syncAndBackup?.syncProvider !== 'webdav'">
+                    <div [class.d-none]="formData.syncProvider !== 'webdav'">
                         <div class="mb-3">
                             <label class="form-label">WebDAV Server URL</label>
                             <input
                                 type="text"
                                 class="form-control"
                                 placeholder="https://nextcloud.example.com/remote.php/dav/files/user/"
-                                [value]="config.store?.syncAndBackup?.webdavUrl || ''"
-                                (input)="onConfigInput('webdavUrl', $event)"
+                                [value]="formData.webdavUrl"
+                                (input)="onFieldChange('webdavUrl', $any($event.target).value)"
                             />
+                            <div class="form-text">
+                                Full WebDAV root URL including protocol and path.
+                            </div>
                         </div>
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
@@ -171,17 +173,19 @@ interface BackupSnapshotItem {
                                 <input
                                     type="text"
                                     class="form-control"
-                                    [value]="config.store?.syncAndBackup?.webdavUsername || ''"
-                                    (input)="onConfigInput('webdavUsername', $event)"
+                                    placeholder="Username or email"
+                                    [value]="formData.webdavUsername"
+                                    (input)="onFieldChange('webdavUsername', $any($event.target).value)"
                                 />
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Password / App Token</label>
+                                <label class="form-label">Password / App Password</label>
                                 <input
                                     type="password"
                                     class="form-control"
-                                    [value]="config.store?.syncAndBackup?.webdavPassword || ''"
-                                    (input)="onConfigInput('webdavPassword', $event)"
+                                    placeholder="Password or App Token"
+                                    [value]="formData.webdavPassword"
+                                    (input)="onFieldChange('webdavPassword', $any($event.target).value)"
                                 />
                             </div>
                         </div>
@@ -191,14 +195,17 @@ interface BackupSnapshotItem {
                                 type="text"
                                 class="form-control"
                                 placeholder="/tabby-config.yaml"
-                                [value]="config.store?.syncAndBackup?.webdavPath || '/tabby-config.yaml'"
-                                (input)="onConfigInput('webdavPath', $event)"
+                                [value]="formData.webdavPath"
+                                (input)="onFieldChange('webdavPath', $any($event.target).value)"
                             />
+                            <div class="form-text">
+                                Remote destination filename or subpath on the WebDAV server.
+                            </div>
                         </div>
                     </div>
 
                     <!-- Local Sync Directory Settings -->
-                    <div [class.d-none]="config.store?.syncAndBackup?.syncProvider !== 'local'">
+                    <div [class.d-none]="formData.syncProvider !== 'local'">
                         <div class="mb-3">
                             <label class="form-label">Local Destination Path</label>
                             <div class="input-group">
@@ -206,8 +213,8 @@ interface BackupSnapshotItem {
                                     type="text"
                                     class="form-control"
                                     placeholder="/Users/name/Sync/Tabby/"
-                                    [value]="config.store?.syncAndBackup?.localSyncPath || ''"
-                                    (input)="onConfigInput('localSyncPath', $event)"
+                                    [value]="formData.localSyncPath"
+                                    (input)="onFieldChange('localSyncPath', $any($event.target).value)"
                                 />
                                 <button
                                     type="button"
@@ -218,7 +225,7 @@ interface BackupSnapshotItem {
                                 </button>
                             </div>
                             <div class="form-text">
-                                Ideal for syncing across devices using Syncthing, Dropbox, iCloud, or network drives.
+                                Specify a folder synced by Syncthing, Dropbox, iCloud, or a mounted network drive.
                             </div>
                         </div>
                     </div>
@@ -234,8 +241,8 @@ interface BackupSnapshotItem {
                             class="form-check-input"
                             type="checkbox"
                             id="enableAutoSyncCheck"
-                            [checked]="config.store?.syncAndBackup?.syncEnabled"
-                            (change)="toggleAutoSync($event)"
+                            [checked]="formData.syncEnabled"
+                            (change)="onFieldChange('syncEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableAutoSyncCheck">
                             Enable automatic background synchronization
@@ -245,12 +252,12 @@ interface BackupSnapshotItem {
                         </div>
                     </div>
 
-                    <div class="mb-3" [class.d-none]="!config.store?.syncAndBackup?.syncEnabled">
-                        <label class="form-label">Sync Interval (Minutes)</label>
+                    <div class="mb-3" [class.d-none]="!formData.syncEnabled">
+                        <label class="form-label">Sync Interval</label>
                         <select
                             class="form-select"
-                            [value]="config.store?.syncAndBackup?.syncIntervalMinutes || 30"
-                            (change)="onIntervalChange($event)"
+                            [value]="formData.syncIntervalMinutes"
+                            (change)="onFieldChange('syncIntervalMinutes', $any($event.target).value)"
                         >
                             <option [value]="5">Every 5 minutes</option>
                             <option [value]="15">Every 15 minutes</option>
@@ -303,8 +310,8 @@ interface BackupSnapshotItem {
                             class="form-check-input"
                             type="checkbox"
                             id="enablePreSyncBackup"
-                            [checked]="config.store?.syncAndBackup?.backupEnabled"
-                            (change)="toggleBackupPolicy('backupEnabled', $event)"
+                            [checked]="formData.backupEnabled"
+                            (change)="onFieldChange('backupEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label" for="enablePreSyncBackup">
                             Create backup snapshot before every synchronization
@@ -319,8 +326,8 @@ interface BackupSnapshotItem {
                             class="form-check-input"
                             type="checkbox"
                             id="enableStartupBackup"
-                            [checked]="config.store?.syncAndBackup?.backupOnStartup"
-                            (change)="toggleBackupPolicy('backupOnStartup', $event)"
+                            [checked]="formData.backupOnStartup"
+                            (change)="onFieldChange('backupOnStartup', $any($event.target).checked)"
                         />
                         <label class="form-check-label" for="enableStartupBackup">
                             Create daily backup snapshot on Tabby startup
@@ -331,8 +338,8 @@ interface BackupSnapshotItem {
                         <label class="form-label">Retention Policy (Max snapshots to keep)</label>
                         <select
                             class="form-select"
-                            [value]="config.store?.syncAndBackup?.maxBackupsToKeep || 10"
-                            (change)="onMaxBackupsChange($event)"
+                            [value]="formData.maxBackupsToKeep"
+                            (change)="onFieldChange('maxBackupsToKeep', $any($event.target).value)"
                         >
                             <option [value]="5">5 snapshots</option>
                             <option [value]="10">10 snapshots (Recommended)</option>
@@ -411,8 +418,8 @@ interface BackupSnapshotItem {
                             class="form-check-input"
                             type="checkbox"
                             id="enableEncryptionCheck"
-                            [checked]="config.store?.syncAndBackup?.encryptionEnabled"
-                            (change)="toggleEncryption($event)"
+                            [checked]="formData.encryptionEnabled"
+                            (change)="onFieldChange('encryptionEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableEncryptionCheck">
                             Encrypt payload before uploading to remote storage
@@ -422,15 +429,15 @@ interface BackupSnapshotItem {
                         </div>
                     </div>
 
-                    <div [class.d-none]="!config.store?.syncAndBackup?.encryptionEnabled">
+                    <div [class.d-none]="!formData.encryptionEnabled">
                         <div class="mb-3">
                             <label class="form-label">Master Encryption Password</label>
                             <input
                                 type="password"
                                 class="form-control"
                                 placeholder="Enter strong master password..."
-                                [value]="config.store?.syncAndBackup?.encryptionPassword || ''"
-                                (input)="onConfigInput('encryptionPassword', $event)"
+                                [value]="formData.encryptionPassword"
+                                (input)="onFieldChange('encryptionPassword', $any($event.target).value)"
                             />
                             <div class="form-text text-warning">
                                 ⚠️ <strong>Important:</strong> If you lose this password, your cloud-stored settings cannot be recovered.
@@ -477,9 +484,10 @@ interface BackupSnapshotItem {
                             <span class="text-muted small">Upcoming Release</span>
                         </div>
                         <ul class="mb-0">
-                            <li><strong>Modular Settings Tabs</strong>: Added dedicated sub-tabs for Sync, Backups, Security, Changelog, and About.</li>
+                            <li><strong>Explicit Save Workflow</strong>: Settings modifications require clicking "Save Settings" rather than auto-saving immediately.</li>
+                            <li><strong>Streamlined Storage Providers</strong>: Focused WebDAV and Local Directory synchronization targets.</li>
+                            <li><strong>Modular Settings Tabs</strong>: Dedicated sub-tabs for Sync, Backups, Security, Changelog, and About.</li>
                             <li><strong>Automated Backup Policies</strong>: Support for pre-sync and startup backup snapshots with retention rotation.</li>
-                            <li><strong>Storage Provider Adapters</strong>: GitHub Gist, WebDAV, and Local Directory synchronization.</li>
                             <li><strong>Updates &amp; Diagnostics Engine</strong>: Real-time update checks via GitHub Releases and system diagnostics clipboard export.</li>
                         </ul>
                     </div>
@@ -606,11 +614,28 @@ interface BackupSnapshotItem {
         `,
     ],
 })
-export class SyncAndBackupSettingsTabComponent {
+export class SyncAndBackupSettingsTabComponent implements OnInit {
     @HostBinding('class.content-box') true = true
 
     activeTab: SettingsSubTab = 'sync'
     pluginVersion: string = packageJson.version || '0.1.0'
+
+    isDirty: boolean = false
+    formData: any = {
+        syncEnabled: false,
+        syncIntervalMinutes: 30,
+        syncProvider: 'webdav',
+        webdavUrl: '',
+        webdavUsername: '',
+        webdavPassword: '',
+        webdavPath: '/tabby-config.yaml',
+        localSyncPath: '',
+        backupEnabled: true,
+        backupOnStartup: true,
+        maxBackupsToKeep: 10,
+        encryptionEnabled: false,
+        encryptionPassword: '',
+    }
 
     isCheckingUpdates: boolean = false
     hasCheckedUpdates: boolean = false
@@ -642,6 +667,54 @@ export class SyncAndBackupSettingsTabComponent {
         private platform: PlatformService,
     ) {}
 
+    ngOnInit(): void {
+        this.resetForm()
+    }
+
+    resetForm(): void {
+        const saved = this.config.store?.syncAndBackup || {}
+        this.formData = {
+            syncEnabled: saved.syncEnabled ?? false,
+            syncIntervalMinutes: saved.syncIntervalMinutes ?? 30,
+            syncProvider: saved.syncProvider === 'gist' ? 'webdav' : (saved.syncProvider || 'webdav'),
+            webdavUrl: saved.webdavUrl || '',
+            webdavUsername: saved.webdavUsername || '',
+            webdavPassword: saved.webdavPassword || '',
+            webdavPath: saved.webdavPath || '/tabby-config.yaml',
+            localSyncPath: saved.localSyncPath || '',
+            backupEnabled: saved.backupEnabled ?? true,
+            backupOnStartup: saved.backupOnStartup ?? true,
+            maxBackupsToKeep: saved.maxBackupsToKeep ?? 10,
+            encryptionEnabled: saved.encryptionEnabled ?? false,
+            encryptionPassword: saved.encryptionPassword || '',
+        }
+        this.isDirty = false
+    }
+
+    onFieldChange(field: string, value: any): void {
+        if (field === 'syncIntervalMinutes' || field === 'maxBackupsToKeep') {
+            this.formData[field] = parseInt(value, 10)
+        } else {
+            this.formData[field] = value
+        }
+        this.isDirty = true
+    }
+
+    async saveSettings(): Promise<void> {
+        if (!this.config.store.syncAndBackup) {
+            this.config.store.syncAndBackup = {}
+        }
+        Object.assign(this.config.store.syncAndBackup, this.formData)
+        await this.config.save()
+        this.isDirty = false
+        this.notifications.notice('Sync & Backup settings saved successfully!')
+    }
+
+    discardChanges(): void {
+        this.resetForm()
+        this.notifications.info('Unsaved changes discarded.')
+    }
+
     setTab(tab: SettingsSubTab): void {
         this.activeTab = tab
     }
@@ -658,10 +731,8 @@ export class SyncAndBackupSettingsTabComponent {
         try {
             const selectedDir = await this.platform.pickDirectory()
             if (selectedDir) {
-                this.ensureConfigStore()
-                this.config.store.syncAndBackup.localSyncPath = selectedDir
-                this.config.save()
-                this.notifications.notice(`Sync folder set to: ${selectedDir}`)
+                this.onFieldChange('localSyncPath', selectedDir)
+                this.notifications.info(`Selected local sync path: ${selectedDir} (Click Save to apply)`)
             }
         } catch (err: any) {
             this.notifications.error(`Could not pick folder: ${err?.message || err}`)
@@ -736,9 +807,9 @@ export class SyncAndBackupSettingsTabComponent {
             `Plugin Version: v${this.pluginVersion}`,
             `Tabby App Version: ${this.platform.getAppVersion?.() || 'Unknown'}`,
             `Operating System: ${this.platform.getOSRelease?.() || process.platform}`,
-            `Storage Provider: ${this.config.store?.syncAndBackup?.syncProvider || 'gist'}`,
-            `Sync Enabled: ${!!this.config.store?.syncAndBackup?.syncEnabled}`,
-            `Backup Enabled: ${!!this.config.store?.syncAndBackup?.backupEnabled}`,
+            `Storage Provider: ${this.formData.syncProvider || 'webdav'}`,
+            `Sync Enabled: ${!!this.formData.syncEnabled}`,
+            `Backup Enabled: ${!!this.formData.backupEnabled}`,
             `Timestamp: ${new Date().toISOString()}`,
         ].join('\n')
 
@@ -751,10 +822,8 @@ export class SyncAndBackupSettingsTabComponent {
     }
 
     getProviderTitle(): string {
-        const provider = this.config.store?.syncAndBackup?.syncProvider || 'gist'
+        const provider = this.formData.syncProvider || 'webdav'
         switch (provider) {
-            case 'gist':
-                return 'GitHub Gist'
             case 'webdav':
                 return 'WebDAV'
             case 'local':
@@ -762,55 +831,6 @@ export class SyncAndBackupSettingsTabComponent {
             default:
                 return provider
         }
-    }
-
-    onProviderChange(event: Event): void {
-        const select = event.target as HTMLSelectElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup.syncProvider = select.value
-        this.config.save()
-    }
-
-    onIntervalChange(event: Event): void {
-        const select = event.target as HTMLSelectElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup.syncIntervalMinutes = parseInt(select.value, 10)
-        this.config.save()
-    }
-
-    onMaxBackupsChange(event: Event): void {
-        const select = event.target as HTMLSelectElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup.maxBackupsToKeep = parseInt(select.value, 10)
-        this.config.save()
-    }
-
-    onConfigInput(field: string, event: Event): void {
-        const input = event.target as HTMLInputElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup[field] = input.value
-        this.config.save()
-    }
-
-    toggleAutoSync(event: Event): void {
-        const input = event.target as HTMLInputElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup.syncEnabled = input.checked
-        this.config.save()
-    }
-
-    toggleBackupPolicy(field: string, event: Event): void {
-        const input = event.target as HTMLInputElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup[field] = input.checked
-        this.config.save()
-    }
-
-    toggleEncryption(event: Event): void {
-        const input = event.target as HTMLInputElement
-        this.ensureConfigStore()
-        this.config.store.syncAndBackup.encryptionEnabled = input.checked
-        this.config.save()
     }
 
     triggerSyncNow(): void {
@@ -838,10 +858,6 @@ export class SyncAndBackupSettingsTabComponent {
         this.notifications.info('Sync & Backup: Snapshot deleted.')
     }
 
-    autoCreateGist(): void {
-        this.notifications.info('Sync & Backup: Auto-creating Gist on GitHub...')
-    }
-
     private isNewerVersion(remoteVer: string, currentVer: string): boolean {
         const rParts = remoteVer.split('.').map(n => parseInt(n, 10) || 0)
         const cParts = currentVer.split('.').map(n => parseInt(n, 10) || 0)
@@ -852,11 +868,5 @@ export class SyncAndBackupSettingsTabComponent {
             if (r < c) return false
         }
         return false
-    }
-
-    private ensureConfigStore(): void {
-        if (!this.config.store.syncAndBackup) {
-            this.config.store.syncAndBackup = {}
-        }
     }
 }

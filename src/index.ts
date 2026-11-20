@@ -90,9 +90,7 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
             // Sync settings
             syncEnabled: false,
             syncIntervalMinutes: 30,
-            syncProvider: 'gist', // 'gist' | 'webdav' | 'local'
-            gistToken: '',
-            gistId: '',
+            syncProvider: 'webdav', // 'webdav' | 'local'
             webdavUrl: '',
             webdavUsername: '',
             webdavPassword: '',
