@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Backup snapshot policies UI with retention rotation controls and snapshots list table.
 - AES-256 payload encryption settings panel and Tabby Vault status indicator.
 - In-app Changelog viewer and About card with dynamic version badge and update checker.
+- Live update check engine querying GitHub Releases API with visual update banner and notifications.
+- Integrated `PlatformService.openExternal()` for launching external links (GitHub repo, issues, releases) in default OS browser.
+- Added native OS folder picker (`pickDirectory()`) for local sync and "Open Folder" action (`openPath()`) for snapshot directory.
+- One-click "Copy Diagnostics & Environment Info" action for bug reporting.
 - Extended `SyncAndBackupConfigProvider` schema defaults in `config.yaml` for provider credentials, retention limits, and encryption toggles.
 
 ### Fixed

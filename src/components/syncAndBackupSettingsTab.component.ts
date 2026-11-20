@@ -1,8 +1,15 @@
 import { Component, HostBinding } from '@angular/core'
-import { ConfigService, NotificationsService } from 'tabby-core'
+import { ConfigService, NotificationsService, PlatformService } from 'tabby-core'
 import packageJson from '../../package.json'
 
 type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
+
+interface UpdateInfo {
+    version: string
+    url: string
+    publishedAt: string
+    body: string
+}
 
 interface BackupSnapshotItem {
     id: string
@@ -27,7 +34,9 @@ interface BackupSnapshotItem {
                     Synchronize your configuration across devices and manage local automated backups
                 </div>
             </div>
-            <span class="badge bg-primary text-uppercase">v{{ pluginVersion }}</span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary text-uppercase">v{{ pluginVersion }}</span>
+            </div>
         </div>
 
         <!-- Sub-navigation Pills / Tabs -->
@@ -192,13 +201,22 @@ interface BackupSnapshotItem {
                     <div [class.d-none]="config.store?.syncAndBackup?.syncProvider !== 'local'">
                         <div class="mb-3">
                             <label class="form-label">Local Destination Path</label>
-                            <input
-                                type="text"
-                                class="form-control"
-                                placeholder="/Users/name/Sync/Tabby/"
-                                [value]="config.store?.syncAndBackup?.localSyncPath || ''"
-                                (input)="onConfigInput('localSyncPath', $event)"
-                            />
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    placeholder="/Users/name/Sync/Tabby/"
+                                    [value]="config.store?.syncAndBackup?.localSyncPath || ''"
+                                    (input)="onConfigInput('localSyncPath', $event)"
+                                />
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-secondary"
+                                    (click)="browseLocalSyncFolder()"
+                                >
+                                    📂 Browse...
+                                </button>
+                            </div>
                             <div class="form-text">
                                 Ideal for syncing across devices using Syncthing, Dropbox, iCloud, or network drives.
                             </div>
@@ -262,9 +280,22 @@ interface BackupSnapshotItem {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-bold">Automated Snapshot Policies</span>
-                    <button type="button" class="btn btn-sm btn-success" (click)="createManualBackup()">
-                        ➕ Create Backup Now
-                    </button>
+                    <div class="d-flex gap-2">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            (click)="openSnapshotsFolder()"
+                        >
+                            📁 Open Folder
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-success"
+                            (click)="createManualBackup()"
+                        >
+                            ➕ Create Backup Now
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
@@ -430,13 +461,13 @@ interface BackupSnapshotItem {
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-bold">Version History &amp; Release Notes</span>
-                    <a
-                        href="https://github.com/adelantad0/tabby-sync-and-backup/releases"
-                        target="_blank"
+                    <button
+                        type="button"
                         class="btn btn-sm btn-outline-secondary"
+                        (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup/releases')"
                     >
                         View on GitHub
-                    </a>
+                    </button>
                 </div>
                 <div class="card-body">
                     <!-- Current / Unreleased -->
@@ -449,6 +480,7 @@ interface BackupSnapshotItem {
                             <li><strong>Modular Settings Tabs</strong>: Added dedicated sub-tabs for Sync, Backups, Security, Changelog, and About.</li>
                             <li><strong>Automated Backup Policies</strong>: Support for pre-sync and startup backup snapshots with retention rotation.</li>
                             <li><strong>Storage Provider Adapters</strong>: GitHub Gist, WebDAV, and Local Directory synchronization.</li>
+                            <li><strong>Updates &amp; Diagnostics Engine</strong>: Real-time update checks via GitHub Releases and system diagnostics clipboard export.</li>
                         </ul>
                     </div>
 
@@ -473,6 +505,28 @@ interface BackupSnapshotItem {
 
         <!-- ==================== TAB 5: ABOUT ==================== -->
         <div [class.d-none]="activeTab !== 'about'">
+            <!-- Update Available Alert Banner -->
+            <div class="alert alert-success d-flex align-items-center justify-content-between mb-3 text-start" [class.d-none]="!updateInfo">
+                <div>
+                    <h6 class="alert-heading m-0">🎉 New version v{{ updateInfo?.version }} is available!</h6>
+                    <div class="small mt-1 text-muted">
+                        Published on {{ updateInfo?.publishedAt }}
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    class="btn btn-sm btn-success"
+                    (click)="openUrl(updateInfo?.url || 'https://github.com/adelantad0/tabby-sync-and-backup/releases/latest')"
+                >
+                    Download Update
+                </button>
+            </div>
+
+            <!-- Up-to-date Confirmation Banner -->
+            <div class="alert alert-secondary mb-3 text-start small" [class.d-none]="!hasCheckedUpdates || updateInfo">
+                ✅ You are running the latest version of <strong>Tabby Sync &amp; Backup</strong> (v{{ pluginVersion }}).
+            </div>
+
             <div class="card mb-3">
                 <div class="card-body text-center py-4">
                     <h4 class="mb-1">Tabby Sync &amp; Backup</h4>
@@ -485,23 +539,39 @@ interface BackupSnapshotItem {
                         <span class="badge bg-secondary">Author: adelantad0</span>
                     </div>
 
-                    <div class="d-flex justify-content-center gap-2">
-                        <a
-                            href="https://github.com/adelantad0/tabby-sync-and-backup"
-                            target="_blank"
+                    <div class="d-flex justify-content-center flex-wrap gap-2 mb-3">
+                        <button
+                            type="button"
                             class="btn btn-outline-primary"
+                            (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup')"
                         >
                             ⭐ GitHub Repository
-                        </a>
-                        <a
-                            href="https://github.com/adelantad0/tabby-sync-and-backup/issues"
-                            target="_blank"
+                        </button>
+                        <button
+                            type="button"
                             class="btn btn-outline-secondary"
+                            (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup/issues')"
                         >
                             🐞 Report an Issue
-                        </a>
-                        <button type="button" class="btn btn-outline-success" (click)="checkForUpdates()">
-                            🔄 Check for Updates
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-outline-success"
+                            [disabled]="isCheckingUpdates"
+                            (click)="checkForUpdates()"
+                        >
+                            <span [class.d-none]="isCheckingUpdates">🔄 Check for Updates</span>
+                            <span [class.d-none]="!isCheckingUpdates">⏳ Checking...</span>
+                        </button>
+                    </div>
+
+                    <div class="d-flex justify-content-center">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-link text-muted"
+                            (click)="copyDiagnostics()"
+                        >
+                            📋 Copy Diagnostics &amp; Environment Info
                         </button>
                     </div>
                 </div>
@@ -542,6 +612,10 @@ export class SyncAndBackupSettingsTabComponent {
     activeTab: SettingsSubTab = 'sync'
     pluginVersion: string = packageJson.version || '0.1.0'
 
+    isCheckingUpdates: boolean = false
+    hasCheckedUpdates: boolean = false
+    updateInfo: UpdateInfo | null = null
+
     // Sample snapshots for UI representation (will connect to BackupService next)
     dummyBackups: BackupSnapshotItem[] = [
         {
@@ -565,10 +639,115 @@ export class SyncAndBackupSettingsTabComponent {
     constructor(
         public config: ConfigService,
         private notifications: NotificationsService,
+        private platform: PlatformService,
     ) {}
 
     setTab(tab: SettingsSubTab): void {
         this.activeTab = tab
+    }
+
+    openUrl(url: string): void {
+        if (this.platform?.openExternal) {
+            this.platform.openExternal(url)
+        } else {
+            window.open(url, '_blank')
+        }
+    }
+
+    async browseLocalSyncFolder(): Promise<void> {
+        try {
+            const selectedDir = await this.platform.pickDirectory()
+            if (selectedDir) {
+                this.ensureConfigStore()
+                this.config.store.syncAndBackup.localSyncPath = selectedDir
+                this.config.save()
+                this.notifications.notice(`Sync folder set to: ${selectedDir}`)
+            }
+        } catch (err: any) {
+            this.notifications.error(`Could not pick folder: ${err?.message || err}`)
+        }
+    }
+
+    openSnapshotsFolder(): void {
+        const homeDir = process.env.HOME || process.env.USERPROFILE || ''
+        const snapshotsPath = `${homeDir}/Library/Application Support/tabby/sync-and-backup/snapshots`
+        try {
+            this.platform.openPath(snapshotsPath)
+            this.notifications.info(`Opening snapshots directory: ${snapshotsPath}`)
+        } catch (err: any) {
+            this.notifications.error(`Could not open directory: ${err?.message || err}`)
+        }
+    }
+
+    async checkForUpdates(): Promise<void> {
+        this.isCheckingUpdates = true
+        this.hasCheckedUpdates = false
+        this.updateInfo = null
+
+        try {
+            const response = await fetch(
+                'https://api.github.com/repos/adelantad0/tabby-sync-and-backup/releases/latest',
+                {
+                    headers: { Accept: 'application/vnd.github.v3+json' },
+                },
+            )
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    this.hasCheckedUpdates = true
+                    this.notifications.notice(`You are on the latest version (v${this.pluginVersion})!`)
+                    return
+                }
+                throw new Error(`GitHub API returned status ${response.status}`)
+            }
+
+            const data = await response.json()
+            const latestTag = (data.tag_name || '').replace(/^v/, '')
+
+            if (latestTag && this.isNewerVersion(latestTag, this.pluginVersion)) {
+                this.updateInfo = {
+                    version: latestTag,
+                    url: data.html_url || 'https://github.com/adelantad0/tabby-sync-and-backup/releases',
+                    publishedAt: new Date(data.published_at).toLocaleDateString(),
+                    body: data.body || '',
+                }
+                this.notifications.notice(
+                    `New version available: v${latestTag}! Check the About tab for details.`,
+                )
+            } else {
+                this.hasCheckedUpdates = true
+                this.notifications.notice(
+                    `You are running the latest version of Tabby Sync & Backup (v${this.pluginVersion})!`,
+                )
+            }
+        } catch (err: any) {
+            console.error('[tabby-sync-and-backup] Update check failed:', err)
+            this.notifications.error(
+                `Failed to check for updates: ${err?.message || 'Network error'}`,
+            )
+        } finally {
+            this.isCheckingUpdates = false
+        }
+    }
+
+    async copyDiagnostics(): Promise<void> {
+        const diagnostics = [
+            `--- Tabby Sync & Backup Diagnostics ---`,
+            `Plugin Version: v${this.pluginVersion}`,
+            `Tabby App Version: ${this.platform.getAppVersion?.() || 'Unknown'}`,
+            `Operating System: ${this.platform.getOSRelease?.() || process.platform}`,
+            `Storage Provider: ${this.config.store?.syncAndBackup?.syncProvider || 'gist'}`,
+            `Sync Enabled: ${!!this.config.store?.syncAndBackup?.syncEnabled}`,
+            `Backup Enabled: ${!!this.config.store?.syncAndBackup?.backupEnabled}`,
+            `Timestamp: ${new Date().toISOString()}`,
+        ].join('\n')
+
+        try {
+            await navigator.clipboard.writeText(diagnostics)
+            this.notifications.notice('Diagnostics info copied to clipboard!')
+        } catch {
+            this.notifications.info('Diagnostics:\n' + diagnostics)
+        }
     }
 
     getProviderTitle(): string {
@@ -663,8 +842,16 @@ export class SyncAndBackupSettingsTabComponent {
         this.notifications.info('Sync & Backup: Auto-creating Gist on GitHub...')
     }
 
-    checkForUpdates(): void {
-        this.notifications.info(`Sync & Backup: You are running the latest version (v${this.pluginVersion})!`)
+    private isNewerVersion(remoteVer: string, currentVer: string): boolean {
+        const rParts = remoteVer.split('.').map(n => parseInt(n, 10) || 0)
+        const cParts = currentVer.split('.').map(n => parseInt(n, 10) || 0)
+        for (let i = 0; i < Math.max(rParts.length, cParts.length); i++) {
+            const r = rParts[i] || 0
+            const c = cParts[i] || 0
+            if (r > c) return true
+            if (r < c) return false
+        }
+        return false
     }
 
     private ensureConfigStore(): void {
