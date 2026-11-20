@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Storage Connection Testing Engine (`SyncService`) with real-time verification for WebDAV and Local directories.
+- WebDAV connectivity probe supporting authenticated `PROPFIND` / `OPTIONS`, latency benchmarking, and error diagnostics.
+- Local directory probe testing existence, directory validation, read/write permissions, and disk integrity.
+- Password visibility toggle (`👁️`) for WebDAV authentication.
+- Storage connection status badges (`✓ Connected`, `✗ Disconnected`, `⏳ Testing...`, `⚪ Not Tested`) in Settings.
+- Responsive latency and detailed diagnostic alert cards under storage settings.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added

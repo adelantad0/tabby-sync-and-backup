@@ -15,6 +15,7 @@ import { SettingsTabProvider } from 'tabby-settings'
 import { SyncAndBackupSettingsTabProvider } from './settings'
 import { SyncAndBackupSettingsTabComponent } from './components/syncAndBackupSettingsTab.component'
 import { BackupService } from './services/backup.service'
+import { SyncService } from './services/sync.service'
 
 // @ts-ignore
 import syncIcon from './icons/sync.svg'
@@ -123,6 +124,7 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
         FormsModule,
     ],
     providers: [
+        SyncService,
         BackupService,
         { provide: ToolbarButtonProvider, useClass: SyncAndBackupToolbarButtonProvider, multi: true },
         { provide: HotkeyProvider, useClass: SyncAndBackupHotkeyProvider, multi: true },

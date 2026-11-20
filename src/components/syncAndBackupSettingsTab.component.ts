@@ -2,6 +2,7 @@ import { Component, HostBinding, OnInit } from '@angular/core'
 import { ConfigService, HostAppService, NotificationsService, PlatformService } from 'tabby-core'
 import { BackupService, BackupSnapshotItem } from '../services/backup.service'
 import { CryptoService, EncryptionStatus } from '../services/crypto.service'
+import { SyncService, ConnectionTestResult, SyncTargetConfig } from '../services/sync.service'
 import packageJson from '../../package.json'
 
 type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
@@ -131,8 +132,23 @@ interface UpdateInfo {
         <div [class.d-none]="activeTab !== 'sync'">
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Storage Provider</span>
-                    <span class="badge bg-secondary">{{ getProviderTitle() }}</span>
+                    <span class="fw-bold">Storage Provider Configuration</span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span
+                            class="badge"
+                            [class.bg-secondary]="connectionStatus === 'untested'"
+                            [class.bg-warning]="connectionStatus === 'testing'"
+                            [class.text-dark]="connectionStatus === 'testing'"
+                            [class.bg-success]="connectionStatus === 'connected'"
+                            [class.bg-danger]="connectionStatus === 'error'"
+                        >
+                            <span [class.d-none]="connectionStatus !== 'untested'">⚪ Not Tested</span>
+                            <span [class.d-none]="connectionStatus !== 'testing'">⏳ Testing...</span>
+                            <span [class.d-none]="connectionStatus !== 'connected'">✓ Connected</span>
+                            <span [class.d-none]="connectionStatus !== 'error'">✗ Disconnected</span>
+                        </span>
+                        <span class="badge bg-secondary">{{ getProviderTitle() }}</span>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
@@ -140,7 +156,7 @@ interface UpdateInfo {
                         <select
                             class="form-select"
                             [(ngModel)]="formData.syncProvider"
-                            (ngModelChange)="onFieldChange('syncProvider', $event)"
+                            (ngModelChange)="onProviderChange($event)"
                         >
                             <option value="webdav">WebDAV (Nextcloud, ownCloud, custom server)</option>
                             <option value="local">Local Directory / Shared Folder (Syncthing, Dropbox, iCloud)</option>
@@ -159,7 +175,7 @@ interface UpdateInfo {
                                 class="form-control"
                                 placeholder="https://nextcloud.example.com/remote.php/dav/files/user/"
                                 [value]="formData.webdavUrl"
-                                (input)="onFieldChange('webdavUrl', $any($event.target).value)"
+                                (input)="onStorageParamChange('webdavUrl', $any($event.target).value)"
                             />
                             <div class="form-text">
                                 Full WebDAV root URL including protocol and path.
@@ -173,31 +189,27 @@ interface UpdateInfo {
                                     class="form-control"
                                     placeholder="Username or email"
                                     [value]="formData.webdavUsername"
-                                    (input)="onFieldChange('webdavUsername', $any($event.target).value)"
+                                    (input)="onStorageParamChange('webdavUsername', $any($event.target).value)"
                                 />
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label">Password / App Password</label>
-                                <input
-                                    type="password"
-                                    class="form-control"
-                                    placeholder="Password or App Token"
-                                    [value]="formData.webdavPassword"
-                                    (input)="onFieldChange('webdavPassword', $any($event.target).value)"
-                                />
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Remote File Path</label>
-                            <input
-                                type="text"
-                                class="form-control"
-                                placeholder="/tabby-config.yaml"
-                                [value]="formData.webdavPath"
-                                (input)="onFieldChange('webdavPath', $any($event.target).value)"
-                            />
-                            <div class="form-text">
-                                Remote destination filename or subpath on the WebDAV server.
+                                <div class="input-group">
+                                    <input
+                                        [type]="showWebdavPassword ? 'text' : 'password'"
+                                        class="form-control"
+                                        placeholder="Password or App Token"
+                                        [value]="formData.webdavPassword"
+                                        (input)="onStorageParamChange('webdavPassword', $any($event.target).value)"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="btn btn-outline-secondary"
+                                        (click)="showWebdavPassword = !showWebdavPassword"
+                                    >
+                                        {{ showWebdavPassword ? '🙈' : '👁️' }}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -212,7 +224,7 @@ interface UpdateInfo {
                                     class="form-control"
                                     placeholder="/Users/name/Sync/Tabby/"
                                     [value]="formData.localSyncPath"
-                                    (input)="onFieldChange('localSyncPath', $any($event.target).value)"
+                                    (input)="onStorageParamChange('localSyncPath', $any($event.target).value)"
                                 />
                                 <button
                                     type="button"
@@ -227,12 +239,50 @@ interface UpdateInfo {
                             </div>
                         </div>
                     </div>
+
+                    <!-- Test Connection Button & Live Feedback -->
+                    <div class="pt-3 border-top">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                            <button
+                                type="button"
+                                class="btn btn-outline-primary d-inline-flex align-items-center gap-2"
+                                [disabled]="isTestingConnection"
+                                (click)="testStorageConnection()"
+                            >
+                                <span [class.d-none]="isTestingConnection">🔍 Test Connection</span>
+                                <span [class.d-none]="!isTestingConnection">⏳ Testing Connection...</span>
+                            </button>
+                            <span class="small text-muted" *ngIf="connectionTestResult?.latencyMs">
+                                Response time: <strong>{{ connectionTestResult?.latencyMs }} ms</strong>
+                            </span>
+                        </div>
+
+                        <!-- Test Result Alert Banner -->
+                        <div class="mt-2" *ngIf="connectionTestResult">
+                            <div
+                                class="alert d-flex align-items-start gap-2 mb-0"
+                                [class.alert-success]="connectionTestResult.success"
+                                [class.alert-danger]="!connectionTestResult.success"
+                            >
+                                <span class="fs-5">{{ connectionTestResult.success ? '✓' : '✗' }}</span>
+                                <div>
+                                    <div class="fw-bold">{{ connectionTestResult.message }}</div>
+                                    <div class="small mt-1 opacity-75" *ngIf="connectionTestResult.details">
+                                        {{ connectionTestResult.details }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <!-- Sync Automation & Schedule Card -->
             <div class="card mb-3">
-                <div class="card-header fw-bold">Automation &amp; Schedule</div>
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">Synchronization Automation &amp; Schedule</span>
+                    <span class="badge bg-secondary">Next Milestone</span>
+                </div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input
@@ -246,7 +296,7 @@ interface UpdateInfo {
                             Enable automatic background synchronization
                         </label>
                         <div class="text-muted small">
-                            Periodically checks remote storage and uploads/downloads configuration automatically.
+                            Periodically syncs configuration with remote storage according to interval.
                         </div>
                     </div>
 
@@ -265,16 +315,11 @@ interface UpdateInfo {
                         </select>
                     </div>
 
-                    <div class="d-flex align-items-center gap-2 pt-2 border-top">
-                        <button type="button" class="btn btn-primary" (click)="triggerSyncNow()">
-                            🔄 Sync Now
-                        </button>
-                        <button type="button" class="btn btn-outline-primary" (click)="triggerUpload()">
-                            ⬆️ Upload to Remote
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" (click)="triggerDownload()">
-                            ⬇️ Download from Remote
-                        </button>
+                    <div class="alert alert-secondary d-flex align-items-center gap-2 mb-0 small">
+                        <span>ℹ️</span>
+                        <div>
+                            Storage connection is ready to be configured. The full bidirectional configuration sync engine will be activated in the next step once target connection is confirmed.
+                        </div>
                     </div>
                 </div>
             </div>
@@ -986,6 +1031,20 @@ interface UpdateInfo {
                 border-color: rgba(25, 135, 84, 0.4) !important;
                 color: #75b798 !important;
             }
+            .alert-danger {
+                background-color: rgba(220, 53, 69, 0.16) !important;
+                border-color: rgba(220, 53, 69, 0.35) !important;
+                color: #ea868f !important;
+            }
+            .input-group .btn-outline-secondary {
+                border-color: rgba(255, 255, 255, 0.2) !important;
+                color: rgba(255, 255, 255, 0.85) !important;
+                background: rgba(255, 255, 255, 0.06) !important;
+            }
+            .input-group .btn-outline-secondary:hover {
+                background: rgba(255, 255, 255, 0.16) !important;
+                color: #ffffff !important;
+            }
             .table-responsive {
                 overflow-x: auto;
             }
@@ -1047,6 +1106,12 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     isLoadingBackups: boolean = false
     remoteTargetDescription: string = ''
 
+    // Storage Connection Testing State
+    isTestingConnection: boolean = false
+    connectionTestResult: ConnectionTestResult | null = null
+    connectionStatus: 'untested' | 'testing' | 'connected' | 'error' = 'untested'
+    showWebdavPassword: boolean = false
+
     // Security Form State
     isChangingPassword: boolean = false
     oldPasswordInput: string = ''
@@ -1080,6 +1145,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         private platform: PlatformService,
         private hostApp: HostAppService,
         private backupService: BackupService,
+        private syncService: SyncService,
     ) {}
 
     async ngOnInit(): Promise<void> {
@@ -1109,7 +1175,63 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.oldPasswordInput = ''
         this.newPasswordInput = ''
         this.confirmPasswordInput = ''
+        this.connectionStatus = 'untested'
+        this.connectionTestResult = null
+        this.isTestingConnection = false
+        this.showWebdavPassword = false
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+    }
+
+    onProviderChange(provider: string): void {
+        this.formData.syncProvider = provider
+        this.isDirty = true
+        this.connectionStatus = 'untested'
+        this.connectionTestResult = null
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+    }
+
+    onStorageParamChange(field: string, value: any): void {
+        this.formData[field] = value
+        this.isDirty = true
+        this.connectionStatus = 'untested'
+        this.connectionTestResult = null
+        this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+    }
+
+    async testStorageConnection(): Promise<void> {
+        this.isTestingConnection = true
+        this.connectionStatus = 'testing'
+        this.connectionTestResult = null
+
+        try {
+            const target: SyncTargetConfig = {
+                provider: this.formData.syncProvider,
+                webdavUrl: this.formData.webdavUrl,
+                webdavUsername: this.formData.webdavUsername,
+                webdavPassword: this.formData.webdavPassword,
+                webdavPath: this.formData.webdavPath,
+                localSyncPath: this.formData.localSyncPath,
+            }
+
+            const result = await this.syncService.testConnection(target)
+            this.connectionTestResult = result
+            this.connectionStatus = result.success ? 'connected' : 'error'
+
+            if (result.success) {
+                this.notifications.notice(`Connection test passed: ${result.message}`)
+            } else {
+                this.notifications.error(`Connection test failed: ${result.message}`)
+            }
+        } catch (e: any) {
+            this.connectionTestResult = {
+                success: false,
+                message: `Connection test error: ${e?.message || e}`,
+            }
+            this.connectionStatus = 'error'
+            this.notifications.error(this.connectionTestResult.message)
+        } finally {
+            this.isTestingConnection = false
+        }
     }
 
     isSyncConfigured(): boolean {
@@ -1475,8 +1597,12 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         try {
             const selectedDir = await this.platform.pickDirectory()
             if (selectedDir) {
-                this.onFieldChange('localSyncPath', selectedDir)
-                this.notifications.info(`Selected local sync path: ${selectedDir} (Click Save to apply)`)
+                this.formData.localSyncPath = selectedDir
+                this.isDirty = true
+                this.connectionStatus = 'untested'
+                this.connectionTestResult = null
+                this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
+                this.notifications.info(`Selected local sync path: ${selectedDir}`)
             }
         } catch (err: any) {
             this.notifications.error(`Could not pick folder: ${err?.message || err}`)
