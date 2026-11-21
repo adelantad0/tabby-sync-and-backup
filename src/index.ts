@@ -16,6 +16,9 @@ import { SyncAndBackupSettingsTabProvider } from './settings'
 import { SyncAndBackupSettingsTabComponent } from './components/syncAndBackupSettingsTab.component'
 import { BackupService } from './services/backup.service'
 import { SyncService } from './services/sync.service'
+import { DeviceIdentityService } from './services/device-identity.service'
+import { SyncMergerService } from './services/sync-merger.service'
+import { SyncEngineService } from './services/sync-engine.service'
 
 // @ts-ignore
 import syncIcon from './icons/sync.svg'
@@ -28,6 +31,7 @@ export class SyncAndBackupToolbarButtonProvider extends ToolbarButtonProvider {
     constructor(
         private notifications: NotificationsService,
         private app: AppService,
+        private syncEngine: SyncEngineService,
     ) {
         super()
     }
@@ -36,11 +40,15 @@ export class SyncAndBackupToolbarButtonProvider extends ToolbarButtonProvider {
         return [
             {
                 icon: syncIcon,
-                title: 'Sync & Backup',
+                title: 'Sync & Backup: Synchronize Now',
                 weight: 5, // Positioned on the right toolbar section
-                click: () => {
-                    console.log('[tabby-sync-and-backup] Button clicked')
-                    this.notifications.info('Tabby Sync & Backup is ready!')
+                click: async () => {
+                    console.log('[tabby-sync-and-backup] Toolbar button clicked')
+                    try {
+                        await this.syncEngine.syncNow(true)
+                    } catch (e) {
+                        // Handled in service
+                    }
                 },
             },
         ]
@@ -52,7 +60,11 @@ export class SyncAndBackupToolbarButtonProvider extends ToolbarButtonProvider {
  */
 @Injectable()
 export class SyncAndBackupHotkeyProvider extends HotkeyProvider {
-    constructor(private notifications: NotificationsService) {
+    constructor(
+        private notifications: NotificationsService,
+        private syncEngine: SyncEngineService,
+        private backupService: BackupService,
+    ) {
         super()
     }
 
@@ -72,12 +84,18 @@ export class SyncAndBackupHotkeyProvider extends HotkeyProvider {
     handle(id: string): boolean {
         if (id === 'sync-and-backup:sync') {
             console.log('[tabby-sync-and-backup] Sync hotkey triggered')
-            this.notifications.info('Sync & Backup: Synchronizing...')
+            this.syncEngine.syncNow(true).catch(e => {
+                console.warn('[tabby-sync-and-backup] Hotkey sync error:', e)
+            })
             return true
         }
         if (id === 'sync-and-backup:create-backup') {
             console.log('[tabby-sync-and-backup] Backup hotkey triggered')
-            this.notifications.info('Sync & Backup: Backup created!')
+            this.backupService.createLocalBackup('Manual').then(() => {
+                this.notifications.notice('Sync & Backup: Manual backup created!')
+            }).catch(e => {
+                this.notifications.error(`Backup failed: ${e?.message || e}`)
+            })
             return true
         }
         return false
@@ -93,7 +111,6 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
         syncAndBackup: {
             // Sync settings
             syncEnabled: false,
-            syncIntervalMinutes: 30,
             syncProvider: 'webdav', // 'webdav' | 'local'
             webdavUrl: '',
             webdavUsername: '',
@@ -101,6 +118,21 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
             webdavPath: '/tabby-config.yaml',
             localSyncPath: '',
             lastSyncedAt: null,
+
+            // Device identity
+            deviceId: '',
+            deviceName: '',
+
+            // Selective sync settings
+            syncProfiles: true,
+            syncVault: false,
+            syncColorSchemes: true,
+
+            // Sync triggers
+            syncOnStartup: true,
+            syncOnFocus: true,
+            periodicSync: false,
+            syncIntervalMinutes: 15,
 
             // Backup settings
             backupEnabled: true,
@@ -124,6 +156,9 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
         FormsModule,
     ],
     providers: [
+        DeviceIdentityService,
+        SyncMergerService,
+        SyncEngineService,
         SyncService,
         BackupService,
         { provide: ToolbarButtonProvider, useClass: SyncAndBackupToolbarButtonProvider, multi: true },
@@ -139,7 +174,14 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
     ],
 })
 export default class SyncAndBackupModule {
-    constructor() {
+    constructor(private syncEngine: SyncEngineService) {
         console.log('[tabby-sync-and-backup] Plugin initialized successfully in Tabby!')
+        this.syncEngine.init()
     }
 }
+
+export { DeviceIdentityService } from './services/device-identity.service'
+export { SyncMergerService } from './services/sync-merger.service'
+export { SyncEngineService } from './services/sync-engine.service'
+export { SyncService } from './services/sync.service'
+export * from './models/sync.model'

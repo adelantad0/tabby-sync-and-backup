@@ -3,6 +3,9 @@ import { ConfigService, HostAppService, NotificationsService, PlatformService } 
 import { BackupService, BackupSnapshotItem } from '../services/backup.service'
 import { CryptoService, EncryptionStatus } from '../services/crypto.service'
 import { SyncService, ConnectionTestResult, SyncTargetConfig } from '../services/sync.service'
+import { DeviceIdentityService } from '../services/device-identity.service'
+import { SyncEngineService } from '../services/sync-engine.service'
+import { SyncClusterMember } from '../models/sync.model'
 import packageJson from '../../package.json'
 
 type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
@@ -130,6 +133,95 @@ interface UpdateInfo {
 
         <!-- ==================== TAB 1: SYNC ==================== -->
         <div [class.d-none]="activeTab !== 'sync'">
+            <!-- 1. Live Sync Status & Manual Trigger Action -->
+            <div class="card mb-3 border-primary">
+                <div class="card-body d-flex align-items-center justify-content-between flex-wrap gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <button
+                            type="button"
+                            class="btn btn-primary d-inline-flex align-items-center gap-2"
+                            [disabled]="syncEngine.isSyncing || !isSyncConfigured()"
+                            (click)="triggerSyncNow()"
+                        >
+                            <span [class.d-none]="syncEngine.isSyncing">🔄 Synchronize Now</span>
+                            <span [class.d-none]="!syncEngine.isSyncing">⏳ Synchronizing...</span>
+                        </button>
+                        <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span
+                                    class="badge"
+                                    [class.bg-success]="syncEngine.lastSyncStatus === 'success'"
+                                    [class.bg-warning]="syncEngine.lastSyncStatus === 'syncing'"
+                                    [class.text-dark]="syncEngine.lastSyncStatus === 'syncing'"
+                                    [class.bg-danger]="syncEngine.lastSyncStatus === 'error'"
+                                    [class.bg-secondary]="syncEngine.lastSyncStatus === 'idle'"
+                                >
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'success'">✓ Synchronized</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'syncing'">⏳ Sync In Progress</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'error'">✗ Sync Error</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'idle'">⚪ Ready to Sync</span>
+                                </span>
+                                <span class="small text-muted" *ngIf="syncEngine.lastSyncTime">
+                                    Last synced: {{ formatClusterDate(syncEngine.lastSyncTime.toISOString()) }}
+                                </span>
+                            </div>
+                            <div class="small text-danger mt-1" *ngIf="syncEngine.lastSyncError">
+                                {{ syncEngine.lastSyncError }}
+                            </div>
+                            <div class="small text-muted mt-1" *ngIf="!syncEngine.lastSyncError && !isSyncConfigured()">
+                                Configure storage target below to enable synchronization.
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge bg-secondary">{{ getProviderTitle() }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. This Device Identity Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">💻 This Device Identity</span>
+                    <span class="badge bg-dark border">{{ getPlatformLabel(thisPlatform) }}</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Device Name</label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                placeholder="e.g. MacBook Pro, Workstation PC"
+                                [(ngModel)]="formData.deviceName"
+                                (ngModelChange)="onDeviceNameChange($event)"
+                            />
+                            <div class="form-text">
+                                Renaming this device updates its label on peer computers without creating duplicate files or re-uploading data.
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Unique Device ID (UUID)</label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    class="form-control form-control-sm font-monospace bg-light text-dark"
+                                    readonly
+                                    [value]="thisDeviceId"
+                                />
+                                <button type="button" class="btn btn-outline-secondary btn-sm" (click)="copyDeviceId()">
+                                    📋 Copy
+                                </button>
+                            </div>
+                            <div class="form-text">
+                                Permanent identifier for this device's state file (<code>devices/{{ thisDeviceId.substring(0, 8) }}...json</code>).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Storage Provider Configuration -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-bold">Storage Provider Configuration</span>
@@ -277,11 +369,73 @@ interface UpdateInfo {
                 </div>
             </div>
 
-            <!-- Sync Automation & Schedule Card -->
+            <!-- 4. Selective Synchronization Card -->
             <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Synchronization Automation &amp; Schedule</span>
-                    <span class="badge bg-secondary">Next Milestone</span>
+                <div class="card-header">
+                    <span class="fw-bold">🎛️ Selective Synchronization Scope</span>
+                </div>
+                <div class="card-body">
+                    <div class="form-check form-switch mb-2">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="syncProfilesCheck"
+                            [checked]="formData.syncProfiles"
+                            (change)="onFieldChange('syncProfiles', $any($event.target).checked)"
+                        />
+                        <label class="form-check-label fw-bold" for="syncProfilesCheck">
+                            Synchronize Profiles &amp; Folders
+                        </label>
+                        <div class="text-muted small">
+                            SSH, Telnet, Serial connections, and profile groups.
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mb-2">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="syncVaultCheck"
+                            [checked]="formData.syncVault"
+                            (change)="onFieldChange('syncVault', $any($event.target).checked)"
+                        />
+                        <label class="form-check-label fw-bold" for="syncVaultCheck">
+                            Synchronize Vault Secrets
+                        </label>
+                        <div class="text-muted small">
+                            Encrypted passwords and private keys. Requires identical Master Password on all synchronized machines.
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mb-3">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            id="syncColorSchemesCheck"
+                            [checked]="formData.syncColorSchemes"
+                            (change)="onFieldChange('syncColorSchemes', $any($event.target).checked)"
+                        />
+                        <label class="form-check-label fw-bold" for="syncColorSchemesCheck">
+                            Synchronize Color Schemes
+                        </label>
+                        <div class="text-muted small">
+                            Custom terminal color palettes.
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary d-flex align-items-center gap-2 mb-0 small">
+                        <span>ℹ️</span>
+                        <div>
+                            <strong>Cross-Platform Safety:</strong> System-specific parameters (such as <code>/bin/zsh</code> vs <code>powershell.exe</code> shell executables, window hotkeys, and window geometry) are kept local on each machine and never overwritten.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Synchronization Automation & Schedule Card -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <span class="fw-bold">⚙️ Synchronization Automation &amp; Triggers</span>
                 </div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
@@ -296,30 +450,118 @@ interface UpdateInfo {
                             Enable automatic background synchronization
                         </label>
                         <div class="text-muted small">
-                            Periodically syncs configuration with remote storage according to interval.
+                            Automatically coordinates settings across machines using the triggers configured below.
                         </div>
                     </div>
 
-                    <div class="mb-3" [class.d-none]="!formData.syncEnabled">
-                        <label class="form-label">Sync Interval</label>
-                        <select
-                            class="form-select"
-                            [(ngModel)]="formData.syncIntervalMinutes"
-                            (ngModelChange)="onFieldChange('syncIntervalMinutes', $event)"
-                        >
-                            <option [ngValue]="5">Every 5 minutes</option>
-                            <option [ngValue]="15">Every 15 minutes</option>
-                            <option [ngValue]="30">Every 30 minutes (Recommended)</option>
-                            <option [ngValue]="60">Every 1 hour</option>
-                            <option [ngValue]="360">Every 6 hours</option>
-                        </select>
-                    </div>
-
-                    <div class="alert alert-secondary d-flex align-items-center gap-2 mb-0 small">
-                        <span>ℹ️</span>
-                        <div>
-                            Storage connection is ready to be configured. The full bidirectional configuration sync engine will be activated in the next step once target connection is confirmed.
+                    <div [class.d-none]="!formData.syncEnabled">
+                        <div class="form-check mb-2">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                id="syncOnStartupCheck"
+                                [checked]="formData.syncOnStartup"
+                                (change)="onFieldChange('syncOnStartup', $any($event.target).checked)"
+                            />
+                            <label class="form-check-label" for="syncOnStartupCheck">
+                                Synchronize on Tabby startup
+                            </label>
+                            <div class="text-muted small">
+                                Initiates 4 seconds after launch so terminal startup remains instant.
+                            </div>
                         </div>
+
+                        <div class="form-check mb-3">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                id="syncOnFocusCheck"
+                                [checked]="formData.syncOnFocus"
+                                (change)="onFieldChange('syncOnFocus', $any($event.target).checked)"
+                            />
+                            <label class="form-check-label" for="syncOnFocusCheck">
+                                Synchronize when Tabby window regains focus
+                            </label>
+                            <div class="text-muted small">
+                                Automatically pulls changes made on another machine when you return to this computer (debounced by 30 seconds).
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                id="periodicSyncCheck"
+                                [checked]="formData.periodicSync"
+                                (change)="onFieldChange('periodicSync', $any($event.target).checked)"
+                            />
+                            <label class="form-check-label" for="periodicSyncCheck">
+                                Periodic background interval
+                            </label>
+                        </div>
+
+                        <div class="mb-2 ps-4" [class.d-none]="!formData.periodicSync">
+                            <label class="form-label small">Interval</label>
+                            <select
+                                class="form-select form-select-sm"
+                                [(ngModel)]="formData.syncIntervalMinutes"
+                                (ngModelChange)="onFieldChange('syncIntervalMinutes', $event)"
+                            >
+                                <option [ngValue]="5">Every 5 minutes</option>
+                                <option [ngValue]="15">Every 15 minutes (Recommended)</option>
+                                <option [ngValue]="30">Every 30 minutes</option>
+                                <option [ngValue]="60">Every 1 hour</option>
+                                <option [ngValue]="360">Every 6 hours</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. Connected Cluster Devices Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">🌐 Connected Cluster Devices</span>
+                    <button
+                        type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        [disabled]="isLoadingCluster || !isSyncConfigured()"
+                        (click)="loadClusterDevices()"
+                    >
+                        <span [class.d-none]="isLoadingCluster">🔄 Refresh Roster</span>
+                        <span [class.d-none]="!isLoadingCluster">⏳ Loading...</span>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="text-muted small text-center py-3" *ngIf="clusterMembers.length === 0 && !isLoadingCluster">
+                        No peer devices found yet in cluster registry. Click <strong>Synchronize Now</strong> to register this device.
+                    </div>
+                    <div class="table-responsive" *ngIf="clusterMembers.length > 0">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Device Name</th>
+                                    <th>Platform</th>
+                                    <th>Last Seen</th>
+                                    <th>Device ID</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr *ngFor="let member of clusterMembers">
+                                    <td>
+                                        <strong>{{ member.deviceName || 'Unknown Device' }}</strong>
+                                        <span class="badge bg-primary ms-1" *ngIf="member.deviceId === thisDeviceId">This Device</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ getPlatformLabel(member.platform) }}</span>
+                                    </td>
+                                    <td class="small text-muted">{{ formatClusterDate(member.lastSeenAt) }}</td>
+                                    <td>
+                                        <code class="small user-select-all">{{ member.deviceId }}</code>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1127,6 +1369,13 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     promptPasswordInput: string = ''
     showPromptPassword: boolean = false
 
+    // Device Identity & Multi-Device Cluster State
+    thisDeviceId: string = ''
+    thisDeviceName: string = ''
+    thisPlatform: string = ''
+    clusterMembers: SyncClusterMember[] = []
+    isLoadingCluster: boolean = false
+
     isCheckingUpdates: boolean = false
     hasCheckedUpdates: boolean = false
     updateInfo: UpdateInfo | null = null
@@ -1146,24 +1395,43 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         private hostApp: HostAppService,
         private backupService: BackupService,
         private syncService: SyncService,
+        public deviceIdentity: DeviceIdentityService,
+        public syncEngine: SyncEngineService,
     ) {}
 
     async ngOnInit(): Promise<void> {
         this.resetForm()
         await this.loadLocalBackups()
+        await this.loadClusterDevices()
     }
 
     resetForm(): void {
         const saved = this.config.store?.syncAndBackup || {}
+        this.thisDeviceId = this.deviceIdentity.getDeviceId()
+        this.thisDeviceName = this.deviceIdentity.getDeviceName()
+        this.thisPlatform = this.deviceIdentity.getPlatform()
+
         this.formData = {
             syncEnabled: saved.syncEnabled ?? false,
-            syncIntervalMinutes: saved.syncIntervalMinutes ?? 30,
+            syncIntervalMinutes: saved.syncIntervalMinutes ?? 15,
             syncProvider: saved.syncProvider === 'gist' ? 'webdav' : (saved.syncProvider || 'webdav'),
             webdavUrl: saved.webdavUrl || '',
             webdavUsername: saved.webdavUsername || '',
             webdavPassword: saved.webdavPassword || '',
             webdavPath: saved.webdavPath || '/tabby-config.yaml',
             localSyncPath: saved.localSyncPath || '',
+
+            deviceId: this.thisDeviceId,
+            deviceName: this.thisDeviceName,
+
+            syncProfiles: saved.syncProfiles ?? true,
+            syncVault: saved.syncVault ?? false,
+            syncColorSchemes: saved.syncColorSchemes ?? true,
+
+            syncOnStartup: saved.syncOnStartup ?? true,
+            syncOnFocus: saved.syncOnFocus ?? true,
+            periodicSync: saved.periodicSync ?? false,
+
             backupEnabled: saved.backupEnabled ?? true,
             backupOnStartup: saved.backupOnStartup ?? true,
             maxBackupsToKeep: saved.maxBackupsToKeep ?? 10,
@@ -1254,12 +1522,85 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
     }
 
+    onDeviceNameChange(name: string): void {
+        this.formData.deviceName = name
+        this.thisDeviceName = name
+        this.isDirty = true
+    }
+
+    copyDeviceId(): void {
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            navigator.clipboard.writeText(this.thisDeviceId).then(() => {
+                this.notifications.info('Device ID copied to clipboard!')
+            }).catch(() => {
+                this.notifications.info(`Device ID: ${this.thisDeviceId}`)
+            })
+        } else {
+            this.notifications.info(`Device ID: ${this.thisDeviceId}`)
+        }
+    }
+
+    async triggerSyncNow(): Promise<void> {
+        try {
+            await this.syncEngine.syncNow(true)
+            await this.loadClusterDevices()
+            await this.loadLocalBackups()
+        } catch (e) {
+            // Error notification handled in syncEngine
+        }
+    }
+
+    async loadClusterDevices(): Promise<void> {
+        if (!this.isSyncConfigured()) {
+            this.clusterMembers = []
+            return
+        }
+
+        this.isLoadingCluster = true
+        try {
+            const target = this.syncService.getActiveTargetConfig()
+            const registry = await this.syncService.fetchClusterRegistry(target)
+            if (registry && registry.members) {
+                this.clusterMembers = Object.values(registry.members)
+            } else {
+                this.clusterMembers = []
+            }
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not load cluster registry:', e)
+        } finally {
+            this.isLoadingCluster = false
+        }
+    }
+
+    formatClusterDate(isoString: string): string {
+        if (!isoString) return 'Never'
+        try {
+            const d = new Date(isoString)
+            return d.toLocaleString()
+        } catch {
+            return isoString
+        }
+    }
+
+    getPlatformLabel(plat: string): string {
+        if (plat === 'darwin') return 'macOS'
+        if (plat === 'win32') return 'Windows'
+        if (plat === 'linux') return 'Linux'
+        return plat || 'Unknown'
+    }
+
     async saveSettings(): Promise<void> {
         if (!this.config.store.syncAndBackup) {
             this.config.store.syncAndBackup = {}
         }
         Object.assign(this.config.store.syncAndBackup, this.formData)
         await this.config.save()
+
+        if (this.formData.deviceName) {
+            await this.deviceIdentity.setDeviceName(this.formData.deviceName)
+        }
+        this.syncEngine.restartPeriodicTimer()
+
         this.isDirty = false
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
 
@@ -1282,7 +1623,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     setTab(tab: SettingsSubTab): void {
         this.activeTab = tab
-        if (tab === 'backups') {
+        if (tab === 'sync') {
+            this.loadClusterDevices()
+        } else if (tab === 'backups') {
             this.loadLocalBackups()
             if (this.backupView === 'remote' && this.isSyncConfigured()) {
                 this.loadRemoteBackups()
@@ -1690,10 +2033,6 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             default:
                 return provider
         }
-    }
-
-    triggerSyncNow(): void {
-        this.notifications.info('Sync & Backup: Starting manual synchronization...')
     }
 
     triggerUpload(): void {

@@ -2,6 +2,11 @@ import { Injectable } from '@angular/core'
 import { ConfigService, NotificationsService } from 'tabby-core'
 import * as fs from 'fs'
 import * as path from 'path'
+import {
+    SyncDeviceState,
+    SyncClusterMember,
+    SyncClusterRegistry,
+} from '../models/sync.model'
 
 export interface ConnectionTestResult {
     success: boolean
@@ -26,6 +31,315 @@ export class SyncService {
         private config: ConfigService,
         private notifications: NotificationsService,
     ) {}
+
+    /**
+     * Get active storage target configuration from store
+     */
+    getActiveTargetConfig(): SyncTargetConfig {
+        const cfg = this.config.store?.syncAndBackup || {}
+        return {
+            provider: cfg.syncProvider || 'webdav',
+            webdavUrl: cfg.webdavUrl || '',
+            webdavUsername: cfg.webdavUsername || '',
+            webdavPassword: cfg.webdavPassword || '',
+            webdavPath: cfg.webdavPath || '/tabby-config.yaml',
+            localSyncPath: cfg.localSyncPath || '',
+        }
+    }
+
+    /**
+     * Ensure the sync directory structure exists in the storage target
+     * Structure: <root>/sync/devices/
+     */
+    async ensureSyncStructure(target: SyncTargetConfig): Promise<void> {
+        if (target.provider === 'local') {
+            const root = (target.localSyncPath || '').trim()
+            if (!root) throw new Error('Local sync path is not configured')
+            const syncDir = path.join(root, 'sync')
+            const devicesDir = path.join(syncDir, 'devices')
+            if (!fs.existsSync(devicesDir)) {
+                fs.mkdirSync(devicesDir, { recursive: true })
+            }
+            return
+        }
+
+        if (target.provider === 'webdav') {
+            const baseUrl = this.normalizeUrl(target.webdavUrl || '')
+            if (!baseUrl) throw new Error('WebDAV URL is not configured')
+            const authHeader = this.getAuthHeader(target.webdavUsername, target.webdavPassword)
+
+            // Create /sync/ collection
+            await this.webdavMkcol(baseUrl + 'sync/', authHeader)
+            // Create /sync/devices/ collection
+            await this.webdavMkcol(baseUrl + 'sync/devices/', authHeader)
+            return
+        }
+
+        throw new Error(`Unsupported provider: ${target.provider}`)
+    }
+
+    /**
+     * Publish local device state to devices/<deviceId>.json
+     */
+    async publishDeviceState(target: SyncTargetConfig, state: SyncDeviceState): Promise<void> {
+        await this.ensureSyncStructure(target)
+        const payload = JSON.stringify(state, null, 2)
+
+        if (target.provider === 'local') {
+            const root = (target.localSyncPath || '').trim()
+            const devicesDir = path.join(root, 'sync', 'devices')
+            const targetFile = path.join(devicesDir, `${state.deviceId}.json`)
+            const tempFile = path.join(devicesDir, `.${state.deviceId}.${Date.now()}.tmp`)
+
+            // Atomic file write
+            fs.writeFileSync(tempFile, payload, 'utf8')
+            fs.renameSync(tempFile, targetFile)
+            return
+        }
+
+        if (target.provider === 'webdav') {
+            const baseUrl = this.normalizeUrl(target.webdavUrl || '')
+            const targetUrl = `${baseUrl}sync/devices/${encodeURIComponent(state.deviceId)}.json`
+            const authHeader = this.getAuthHeader(target.webdavUsername, target.webdavPassword)
+
+            const res = await fetch(targetUrl, {
+                method: 'PUT',
+                headers: {
+                    ...authHeader,
+                    'Content-Type': 'application/json',
+                },
+                body: payload,
+            })
+
+            if (!res.ok && res.status !== 201 && res.status !== 204 && res.status !== 200) {
+                throw new Error(`Failed to upload device state to WebDAV (HTTP ${res.status}): ${res.statusText}`)
+            }
+            return
+        }
+
+        throw new Error(`Unsupported provider: ${target.provider}`)
+    }
+
+    /**
+     * Read all device states in sync/devices/*.json across the cluster
+     */
+    async fetchClusterDeviceStates(target: SyncTargetConfig): Promise<SyncDeviceState[]> {
+        await this.ensureSyncStructure(target)
+        const states: SyncDeviceState[] = []
+
+        if (target.provider === 'local') {
+            const root = (target.localSyncPath || '').trim()
+            const devicesDir = path.join(root, 'sync', 'devices')
+            if (!fs.existsSync(devicesDir)) return []
+
+            const files = fs.readdirSync(devicesDir).filter(f => f.endsWith('.json') && !f.startsWith('.'))
+            for (const file of files) {
+                try {
+                    const content = fs.readFileSync(path.join(devicesDir, file), 'utf8')
+                    const parsed: SyncDeviceState = JSON.parse(content)
+                    if (parsed && parsed.deviceId && parsed.profiles) {
+                        states.push(parsed)
+                    }
+                } catch (e) {
+                    console.warn(`[tabby-sync-and-backup] Failed to parse device file ${file}:`, e)
+                }
+            }
+            return states
+        }
+
+        if (target.provider === 'webdav') {
+            const baseUrl = this.normalizeUrl(target.webdavUrl || '')
+            const devicesUrl = `${baseUrl}sync/devices/`
+            const authHeader = this.getAuthHeader(target.webdavUsername, target.webdavPassword)
+
+            // PROPFIND Depth: 1 on devices/
+            const listRes = await fetch(devicesUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    ...authHeader,
+                    Depth: '1',
+                    'Content-Type': 'application/xml',
+                },
+            })
+
+            if (!listRes.ok && listRes.status !== 207) {
+                console.warn(`[tabby-sync-and-backup] Could not list WebDAV devices folder (HTTP ${listRes.status})`)
+                return []
+            }
+
+            const xmlText = await listRes.text()
+            const fileHrefs = this.extractJsonFileHrefs(xmlText)
+
+            for (const href of fileHrefs) {
+                try {
+                    // Normalize absolute vs relative href
+                    let fileUrl = href
+                    if (!fileUrl.startsWith('http://') && !fileUrl.startsWith('https://')) {
+                        const urlObj = new URL(baseUrl)
+                        fileUrl = `${urlObj.origin}${href.startsWith('/') ? '' : '/'}${href}`
+                    }
+
+                    const fileRes = await fetch(fileUrl, {
+                        method: 'GET',
+                        headers: authHeader,
+                    })
+
+                    if (fileRes.ok) {
+                        const text = await fileRes.text()
+                        const parsed: SyncDeviceState = JSON.parse(text)
+                        if (parsed && parsed.deviceId && parsed.profiles) {
+                            states.push(parsed)
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[tabby-sync-and-backup] Failed to fetch device state from ${href}:`, e)
+                }
+            }
+            return states
+        }
+
+        return []
+    }
+
+    /**
+     * Update or register current device in cluster.json
+     */
+    async updateClusterRegistry(target: SyncTargetConfig, member: SyncClusterMember): Promise<SyncClusterRegistry> {
+        await this.ensureSyncStructure(target)
+        let registry: SyncClusterRegistry = {
+            formatVersion: 1,
+            updatedAt: new Date().toISOString(),
+            members: {},
+        }
+
+        const existing = await this.fetchClusterRegistry(target)
+        if (existing && existing.members) {
+            registry = existing
+        }
+
+        registry.members[member.deviceId] = member
+        registry.updatedAt = new Date().toISOString()
+
+        const payload = JSON.stringify(registry, null, 2)
+
+        if (target.provider === 'local') {
+            const root = (target.localSyncPath || '').trim()
+            const registryFile = path.join(root, 'sync', 'cluster.json')
+            const tempFile = path.join(root, 'sync', `.cluster.${Date.now()}.tmp`)
+            fs.writeFileSync(tempFile, payload, 'utf8')
+            fs.renameSync(tempFile, registryFile)
+            return registry
+        }
+
+        if (target.provider === 'webdav') {
+            const baseUrl = this.normalizeUrl(target.webdavUrl || '')
+            const targetUrl = `${baseUrl}sync/cluster.json`
+            const authHeader = this.getAuthHeader(target.webdavUsername, target.webdavPassword)
+
+            await fetch(targetUrl, {
+                method: 'PUT',
+                headers: {
+                    ...authHeader,
+                    'Content-Type': 'application/json',
+                },
+                body: payload,
+            })
+            return registry
+        }
+
+        return registry
+    }
+
+    /**
+     * Read cluster.json registry from storage
+     */
+    async fetchClusterRegistry(target: SyncTargetConfig): Promise<SyncClusterRegistry | null> {
+        try {
+            if (target.provider === 'local') {
+                const root = (target.localSyncPath || '').trim()
+                const registryFile = path.join(root, 'sync', 'cluster.json')
+                if (!fs.existsSync(registryFile)) return null
+                const content = fs.readFileSync(registryFile, 'utf8')
+                return JSON.parse(content)
+            }
+
+            if (target.provider === 'webdav') {
+                const baseUrl = this.normalizeUrl(target.webdavUrl || '')
+                const targetUrl = `${baseUrl}sync/cluster.json`
+                const authHeader = this.getAuthHeader(target.webdavUsername, target.webdavPassword)
+
+                const res = await fetch(targetUrl, {
+                    method: 'GET',
+                    headers: authHeader,
+                })
+                if (res.ok) {
+                    const text = await res.text()
+                    return JSON.parse(text)
+                }
+            }
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not read cluster registry:', e)
+        }
+        return null
+    }
+
+    /**
+     * Helper: Extract .json file hrefs from WebDAV PROPFIND multistatus XML
+     */
+    private extractJsonFileHrefs(xml: string): string[] {
+        const hrefRegex = /<(?:[a-zA-Z0-9]+:)?href>([^<]+)<\/(?:[a-zA-Z0-9]+:)?href>/gi
+        const results: string[] = []
+        let match: RegExpExecArray | null
+
+        while ((match = hrefRegex.exec(xml)) !== null) {
+            const rawHref = match[1].trim()
+            if (rawHref.endsWith('.json') && !rawHref.endsWith('/')) {
+                results.push(decodeURIComponent(rawHref))
+            }
+        }
+        return Array.from(new Set(results))
+    }
+
+    /**
+     * Helper: MKCOL for WebDAV collection creation
+     */
+    private async webdavMkcol(url: string, authHeader: Record<string, string>): Promise<void> {
+        try {
+            const res = await fetch(url, {
+                method: 'MKCOL',
+                headers: authHeader,
+            })
+            // 201 Created, 405 Method Not Allowed (already exists), 200/204/207 OK
+            if (res.ok || res.status === 201 || res.status === 405 || res.status === 200) {
+                return
+            }
+        } catch (e) {
+            console.warn(`[tabby-sync-and-backup] MKCOL notice for ${url}:`, e)
+        }
+    }
+
+    /**
+     * Helper: Normalize URL with trailing slash
+     */
+    private normalizeUrl(url: string): string {
+        let u = (url || '').trim()
+        if (u && !u.endsWith('/')) {
+            u += '/'
+        }
+        return u
+    }
+
+    /**
+     * Helper: HTTP Basic Auth Header
+     */
+    private getAuthHeader(username?: string, password?: string): Record<string, string> {
+        const user = username || ''
+        const pass = password || ''
+        const credentials = Buffer.from(`${user}:${pass}`, 'utf8').toString('base64')
+        return {
+            Authorization: `Basic ${credentials}`,
+        }
+    }
 
     /**
      * Test connection to configured or custom storage target
