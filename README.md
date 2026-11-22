@@ -8,11 +8,13 @@ Two-in-one synchronization and automated backup tool for [Tabby Terminal](https:
 
 ## Core Capabilities
 
-- **Bidirectional Settings Sync**: Share terminal profiles, color themes, and custom hotkeys across macOS, Linux, and Windows.
-- **Automated Snapshots**: Create local backup copies of `config.yaml` prior to synchronization operations.
-- **Rollback Support**: Restore previous configuration states if needed.
-- **Multiple Storage Targets**: Support for storage backends such as WebDAV (Nextcloud, ownCloud) and local/network directories (Syncthing, Dropbox, iCloud).
-- **Vault Compatibility**: Designed to respect Tabby encrypted secrets and configuration structures.
+- **Multi-Device Synchronization Engine**: Device-Per-File multi-master sync (`devices/<deviceId>.json`) with Lamport logical clocks, SHA-256 content hashes, and 30-day tombstone deletion propagation. Completely eliminates cloud drive concurrency conflicts (iCloud, Dropbox, Syncthing, WebDAV).
+- **End-to-End Encryption (E2EE)**: Authenticated AES-256-GCM encryption with PBKDF2 (10,000 iterations) for sync payloads and backups with zero plaintext leakage on disk or cloud.
+- **Key Epoch Rotation**: Multi-device password rotation tracking with safe lockout, preventing configuration overwrites when master passwords diverge.
+- **Zero-Data-Loss Conflict Resolution**: Parallel offline edits automatically fork into safe duplicates (`Profile (Conflict from <Device>)`), preserving all connection details.
+- **Automated Pre-Sync Snapshots**: Mandatory local backup snapshot created prior to any configuration merge.
+- **Storage Connection Probes**: Real-time latency measurement and validation for WebDAV and local directories.
+- **Selective Sync**: Choose whether to sync profiles, folders, vault secrets, or themes while keeping OS shell paths and local hotkeys untouched.
 
 ## Settings & Sub-tabs
 

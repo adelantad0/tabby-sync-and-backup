@@ -9,13 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-22
+
 ### Added
-- Storage Connection Testing Engine (`SyncService`) with real-time verification for WebDAV and Local directories.
-- WebDAV connectivity probe supporting authenticated `PROPFIND` / `OPTIONS`, latency benchmarking, and error diagnostics.
-- Local directory probe testing existence, directory validation, read/write permissions, and disk integrity.
-- Password visibility toggle (`👁️`) for WebDAV authentication.
-- Storage connection status badges (`✓ Connected`, `✗ Disconnected`, `⏳ Testing...`, `⚪ Not Tested`) in Settings.
-- Responsive latency and detailed diagnostic alert cards under storage settings.
+- **Multi-Device Synchronization Engine**:
+  - Device-Per-File multi-master architecture (`devices/<deviceId>.json`) completely eliminating file-collision conflicts in shared folders (iCloud Drive, Dropbox, Syncthing, Nextcloud, WebDAV).
+  - Lamport logical revision counters (`rev`, `baseRev`) and deterministic SHA-256 content hashing for complete clock skew immunity.
+  - Tombstone deletion propagation tracking (`deletedAt`, `rev`) with 30-day Time-To-Live (TTL) automatic garbage collection.
+  - Three-way deterministic merge engine with non-destructive duplicate conflict forking (`<Name> (Conflict from <Device>)`) guaranteeing zero data loss during parallel offline edits.
+  - First-startup safe onboarding: fresh instances pull cloud state without overwriting or deleting remote profiles.
+- **End-to-End Encryption (E2EE) for Cloud Sync**:
+  - Full cryptographic sealing of sync state files (`sync/devices/<deviceId>.json`) using authenticated AES-256-GCM and PBKDF2 (10,000 iterations).
+  - Zero plaintext leakage on disk: all profiles, groups, vaults, and themes sealed inside `TABBY_ENC_V1` container.
+  - `keyEpoch` and `keyUpdatedAt` tracking for deterministic multi-device password rotation.
+  - Safe lockout mechanism (`SyncPasswordMismatchError`) preventing accidental configuration overwrites when passwords diverge.
+  - Inline master password unlock banner in the Sync tab for immediate recovery upon password changes.
+- **Storage Connection Testing Engine (`SyncService`)**:
+  - Real-time probe for WebDAV collections (`PROPFIND` / `OPTIONS`), latency benchmarking, and diagnostic error analysis.
+  - Local directory probe verifying existence, directory attributes, and read/write permissions via probe files.
+  - Live status badges (`✓ Connected`, `✗ Disconnected`, `⏳ Testing...`, `⚪ Not Tested`).
+  - Eye toggle (`👁️` / `🙈`) for WebDAV authentication password field.
+- **Sync Automation & UI Overhaul**:
+  - "This Device Identity" card with editable device names and persistent UUID badges.
+  - Selective synchronization scope switches (Profiles, Profile Groups, Vault secrets, Color Schemes).
+  - Preserved cross-platform configuration: OS shell executables, window hotkeys, and window geometry remain device-local.
+  - Automated sync triggers: delayed startup sync (4s), window focus sync with 30-second debounce, and periodic background timer.
+  - Connected Cluster Devices roster table showing peer names, operating systems, security status, and last-seen timestamps.
+  - Dedicated `Pre-Sync` automated safety backup snapshot before every configuration merge.
 
 ## [0.2.0] - 2026-11-21
 
