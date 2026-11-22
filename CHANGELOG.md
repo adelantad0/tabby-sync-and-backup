@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-22
+
+### Fixed
+- **Plugin Installation via Tabby UI (`@npmcli/arborist`)**:
+  - Removed `tabby-core` and `tabby-settings` from `peerDependencies`. Tabby provides these libraries at runtime via host webpack externals; their presence in `peerDependencies` triggered `ETARGET` resolution failures in Tabby's internal Arborist installer because `tabby-core` releases on npm are nightly builds (`-nightly.x`).
+
 ## [0.3.0] - 2026-11-22
 
 ### Added
