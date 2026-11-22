@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-22
+
+### Changed
+- **Default Sync Triggers Optimization**:
+  - Refined default automation triggers upon plugin installation and initial activation:
+    - `syncOnStartup` (Tabby startup): **Enabled** (`true`)
+    - `syncOnConfigChange` (Configuration change): **Enabled** (`true`)
+    - `syncOnFocus` (Window focus): **Disabled** (`false`)
+    - `periodicSync` (Periodic interval): **Disabled** (`false`)
+  - When the user enables automated synchronization for the first time, exactly the two essential triggers (startup and config change) are selected by default.
+
 ## [0.5.0] - 2026-11-22
 
 ### Added

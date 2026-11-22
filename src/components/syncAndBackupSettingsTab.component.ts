@@ -1458,13 +1458,20 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     isDirty: boolean = false
     formData: any = {
         syncEnabled: false,
-        syncIntervalMinutes: 30,
+        syncIntervalMinutes: 15,
         syncProvider: 'webdav',
         webdavUrl: '',
         webdavUsername: '',
         webdavPassword: '',
         webdavPath: '/tabby-config.yaml',
         localSyncPath: '',
+        syncProfiles: true,
+        syncVault: false,
+        syncColorSchemes: true,
+        syncOnStartup: true,
+        syncOnFocus: false,
+        syncOnConfigChange: true,
+        periodicSync: false,
         backupEnabled: true,
         backupOnStartup: true,
         maxBackupsToKeep: 10,
@@ -1583,7 +1590,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             syncColorSchemes: saved.syncColorSchemes ?? true,
 
             syncOnStartup: saved.syncOnStartup ?? true,
-            syncOnFocus: saved.syncOnFocus ?? true,
+            syncOnFocus: saved.syncEnabled ? (saved.syncOnFocus ?? false) : false,
             syncOnConfigChange: saved.syncOnConfigChange ?? true,
             periodicSync: saved.periodicSync ?? false,
 
@@ -1674,6 +1681,13 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             this.formData[field] = typeof value === 'string' ? (parseInt(value, 10) || 10) : value
         } else {
             this.formData[field] = value
+        }
+        if (field === 'syncEnabled' && value === true) {
+            // When enabling automated sync, ensure default triggers (startup & config change) are active
+            if (!this.formData.syncOnStartup && !this.formData.syncOnConfigChange && !this.formData.syncOnFocus && !this.formData.periodicSync) {
+                this.formData.syncOnStartup = true
+                this.formData.syncOnConfigChange = true
+            }
         }
         this.isDirty = true
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()

@@ -136,7 +136,7 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
 
             // Sync triggers
             syncOnStartup: true,
-            syncOnFocus: true,
+            syncOnFocus: false,
             syncOnConfigChange: true,
             periodicSync: false,
             syncIntervalMinutes: 15,
