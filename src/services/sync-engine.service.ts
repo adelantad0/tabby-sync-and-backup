@@ -197,6 +197,8 @@ export class SyncEngineService {
         this.isSyncing = true
         this.lastSyncStatus = 'syncing'
         this.lastSyncError = undefined
+        this.passwordErrorDevice = undefined
+        this.passwordErrorEpoch = undefined
 
         try {
             console.log('[tabby-sync-and-backup] Starting sync cycle...')
@@ -256,6 +258,9 @@ export class SyncEngineService {
             this.lastSyncStatus = 'success'
             this.lastSyncTime = new Date()
             this.lastSyncResult = result
+            this.lastSyncError = undefined
+            this.passwordErrorDevice = undefined
+            this.passwordErrorEpoch = undefined
 
             // STEP 5: Notify user
             const changesCount =

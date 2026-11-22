@@ -1545,10 +1545,11 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     }
 
     t(key: string, params?: Record<string, any>): string {
-        let str = this.translate.instant(key) || key
+        let str = this.translate.instant(key, params) || key
         if (params) {
             for (const [k, v] of Object.entries(params)) {
-                str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v))
+                const val = (v !== undefined && v !== null) ? String(v) : ''
+                str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), val)
             }
         }
         return str

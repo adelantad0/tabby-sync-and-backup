@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-22
+
+### Fixed
+- **Key Epoch Rotation & Password Change Deadlock**:
+  - Prevented synchronization failure when a remote peer in the cluster is on an older key epoch (`remoteEpoch < localEpoch`). The local device now skips unreadable outdated peer payloads without aborting, allowing it to complete its sync cycle and publish its newer encrypted state (`localEpoch`) to the cloud.
+  - Excluded the local device's own state file from the remote peer decryption list in `fetchClusterDeviceStates()`.
+  - Properly reset password error state and error banners upon sync start and successful completion.
+  - Fixed variable interpolation in `t()` to prevent `"undefined"` placeholder values in unlock banners.
+
 ## [0.5.1] - 2026-11-22
 
 ### Changed

@@ -10,6 +10,7 @@ import {
     SyncPasswordMismatchError,
 } from '../models/sync.model'
 import { CryptoService } from './crypto.service'
+import { DeviceIdentityService } from './device-identity.service'
 
 export interface ConnectionTestResult {
     success: boolean
@@ -33,6 +34,7 @@ export class SyncService {
     constructor(
         private config: ConfigService,
         private notifications: NotificationsService,
+        private deviceIdentity: DeviceIdentityService,
     ) {}
 
     /**
@@ -194,6 +196,7 @@ export class SyncService {
     async fetchClusterDeviceStates(target: SyncTargetConfig): Promise<SyncDeviceState[]> {
         await this.ensureSyncStructure(target)
         const states: SyncDeviceState[] = []
+        const localDeviceId = this.deviceIdentity.getDeviceId()
 
         if (target.provider === 'local') {
             const root = (target.localSyncPath || '').trim()
@@ -206,8 +209,26 @@ export class SyncService {
                     const content = fs.readFileSync(path.join(devicesDir, file), 'utf8')
                     const parsed: SyncDeviceState = JSON.parse(content)
                     if (parsed && parsed.deviceId) {
-                        const decrypted = this.decryptDeviceState(parsed)
-                        states.push(decrypted)
+                        // Never attempt to process or decrypt local device's own state from peer listing
+                        if (parsed.deviceId === localDeviceId) {
+                            continue
+                        }
+                        try {
+                            const decrypted = this.decryptDeviceState(parsed)
+                            states.push(decrypted)
+                        } catch (e) {
+                            if (e instanceof SyncPasswordMismatchError) {
+                                // If peer is on an older key epoch, peer hasn't synced with new password yet.
+                                // Do NOT abort our own sync cycle. Allow our device to publish its newer state.
+                                if (e.remoteEpoch < e.localEpoch) {
+                                    console.warn(
+                                        `[tabby-sync-and-backup] Peer "${e.peerDeviceName}" is on older key epoch #${e.remoteEpoch} (local is #${e.localEpoch}). Skipping peer merge until peer updates.`
+                                    )
+                                    continue
+                                }
+                            }
+                            throw e
+                        }
                     }
                 } catch (e) {
                     if (e instanceof SyncPasswordRequiredError || e instanceof SyncPasswordMismatchError) {
@@ -260,8 +281,26 @@ export class SyncService {
                         const text = await fileRes.text()
                         const parsed: SyncDeviceState = JSON.parse(text)
                         if (parsed && parsed.deviceId) {
-                            const decrypted = this.decryptDeviceState(parsed)
-                            states.push(decrypted)
+                            // Never attempt to process or decrypt local device's own state from peer listing
+                            if (parsed.deviceId === localDeviceId) {
+                                continue
+                            }
+                            try {
+                                const decrypted = this.decryptDeviceState(parsed)
+                                states.push(decrypted)
+                            } catch (e) {
+                                if (e instanceof SyncPasswordMismatchError) {
+                                    // If peer is on an older key epoch, peer hasn't synced with new password yet.
+                                    // Do NOT abort our own sync cycle. Allow our device to publish its newer state.
+                                    if (e.remoteEpoch < e.localEpoch) {
+                                        console.warn(
+                                            `[tabby-sync-and-backup] Peer "${e.peerDeviceName}" is on older key epoch #${e.remoteEpoch} (local is #${e.localEpoch}). Skipping peer merge until peer updates.`
+                                        )
+                                        continue
+                                    }
+                                }
+                                throw e
+                            }
                         }
                     }
                 } catch (e) {
