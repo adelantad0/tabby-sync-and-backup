@@ -4,9 +4,14 @@ import { SyncService } from './sync.service'
 import { DeviceIdentityService } from './device-identity.service'
 import { SyncMergerService } from './sync-merger.service'
 import { BackupService } from './backup.service'
-import { SyncMergeResult, SyncClusterMember } from '../models/sync.model'
+import {
+    SyncMergeResult,
+    SyncClusterMember,
+    SyncPasswordRequiredError,
+    SyncPasswordMismatchError,
+} from '../models/sync.model'
 
-export type SyncEngineStatus = 'idle' | 'syncing' | 'success' | 'error'
+export type SyncEngineStatus = 'idle' | 'syncing' | 'success' | 'error' | 'password_required' | 'password_mismatch'
 
 @Injectable({ providedIn: 'root' })
 export class SyncEngineService {
@@ -15,6 +20,8 @@ export class SyncEngineService {
     lastSyncError?: string
     lastSyncResult?: SyncMergeResult
     lastSyncTime?: Date
+    passwordErrorDevice?: string
+    passwordErrorEpoch?: number
 
     private lastFocusSyncTimestamp = 0
     private periodicIntervalId: any = null
@@ -204,10 +211,24 @@ export class SyncEngineService {
             return result
         } catch (err: any) {
             console.error('[tabby-sync-and-backup] Sync cycle failed:', err)
-            this.lastSyncStatus = 'error'
-            this.lastSyncError = err?.message || String(err)
-            if (manual) {
-                this.notifications.error(`Sync failed: ${this.lastSyncError}`)
+            if (err instanceof SyncPasswordRequiredError) {
+                this.lastSyncStatus = 'password_required'
+                this.passwordErrorDevice = err.peerDeviceName
+                this.passwordErrorEpoch = err.remoteEpoch
+                this.lastSyncError = `Master password required: sync payload from "${err.peerDeviceName}" is encrypted (Key Epoch #${err.remoteEpoch}).`
+                this.notifications.error(this.lastSyncError)
+            } else if (err instanceof SyncPasswordMismatchError) {
+                this.lastSyncStatus = 'password_mismatch'
+                this.passwordErrorDevice = err.peerDeviceName
+                this.passwordErrorEpoch = err.remoteEpoch
+                this.lastSyncError = `Master password mismatch on "${err.peerDeviceName}" (Remote Epoch #${err.remoteEpoch}, Local Epoch #${err.localEpoch}).`
+                this.notifications.error(this.lastSyncError)
+            } else {
+                this.lastSyncStatus = 'error'
+                this.lastSyncError = err?.message || String(err)
+                if (manual) {
+                    this.notifications.error(`Sync failed: ${this.lastSyncError}`)
+                }
             }
             throw err
         } finally {

@@ -151,13 +151,15 @@ interface UpdateInfo {
                                 <span
                                     class="badge"
                                     [class.bg-success]="syncEngine.lastSyncStatus === 'success'"
-                                    [class.bg-warning]="syncEngine.lastSyncStatus === 'syncing'"
-                                    [class.text-dark]="syncEngine.lastSyncStatus === 'syncing'"
+                                    [class.bg-warning]="syncEngine.lastSyncStatus === 'syncing' || syncEngine.lastSyncStatus === 'password_required' || syncEngine.lastSyncStatus === 'password_mismatch'"
+                                    [class.text-dark]="syncEngine.lastSyncStatus === 'syncing' || syncEngine.lastSyncStatus === 'password_required' || syncEngine.lastSyncStatus === 'password_mismatch'"
                                     [class.bg-danger]="syncEngine.lastSyncStatus === 'error'"
                                     [class.bg-secondary]="syncEngine.lastSyncStatus === 'idle'"
                                 >
                                     <span [class.d-none]="syncEngine.lastSyncStatus !== 'success'">✓ Synchronized</span>
                                     <span [class.d-none]="syncEngine.lastSyncStatus !== 'syncing'">⏳ Sync In Progress</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_required'">🔐 Password Required</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_mismatch'">⚠️ Password Mismatch</span>
                                     <span [class.d-none]="syncEngine.lastSyncStatus !== 'error'">✗ Sync Error</span>
                                     <span [class.d-none]="syncEngine.lastSyncStatus !== 'idle'">⚪ Ready to Sync</span>
                                 </span>
@@ -175,6 +177,49 @@ interface UpdateInfo {
                     </div>
                     <div>
                         <span class="badge bg-secondary">{{ getProviderTitle() }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Password Required / Mismatch Unlock Banner -->
+            <div
+                class="card border-warning mb-3"
+                *ngIf="syncEngine.lastSyncStatus === 'password_required' || syncEngine.lastSyncStatus === 'password_mismatch'"
+            >
+                <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                    <span>🔐 Master Password Required for Cloud Synchronization</span>
+                    <span class="badge bg-dark">Key Epoch #{{ syncEngine.passwordErrorEpoch || 1 }}</span>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted mb-2">
+                        {{ syncEngine.lastSyncStatus === 'password_mismatch'
+                            ? 'The master password was updated on device "' + (syncEngine.passwordErrorDevice || 'peer') + '" (Key Epoch #' + (syncEngine.passwordErrorEpoch || 1) + '). Enter the updated master password to unlock and resume synchronization.'
+                            : 'Sync state from "' + (syncEngine.passwordErrorDevice || 'peer') + '" is encrypted. Enter your master password to unlock and download profiles.'
+                        }}
+                    </p>
+                    <div class="input-group">
+                        <input
+                            [type]="showSyncUnlockPassword ? 'text' : 'password'"
+                            class="form-control"
+                            placeholder="Enter master password..."
+                            [(ngModel)]="syncUnlockPasswordInput"
+                            (keyup.enter)="applySyncUnlockPassword()"
+                        />
+                        <button
+                            type="button"
+                            class="btn btn-outline-secondary"
+                            (click)="showSyncUnlockPassword = !showSyncUnlockPassword"
+                        >
+                            {{ showSyncUnlockPassword ? '🙈' : '👁️' }}
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-warning"
+                            [disabled]="!syncUnlockPasswordInput"
+                            (click)="applySyncUnlockPassword()"
+                        >
+                            🔓 Unlock &amp; Synchronize
+                        </button>
                     </div>
                 </div>
             </div>
@@ -542,6 +587,7 @@ interface UpdateInfo {
                                 <tr>
                                     <th>Device Name</th>
                                     <th>Platform</th>
+                                    <th>Security</th>
                                     <th>Last Seen</th>
                                     <th>Device ID</th>
                                 </tr>
@@ -554,6 +600,14 @@ interface UpdateInfo {
                                     </td>
                                     <td>
                                         <span class="badge bg-secondary">{{ getPlatformLabel(member.platform) }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-success" *ngIf="member.isEncrypted">
+                                            🔐 Encrypted (Epoch #{{ member.keyEpoch || 1 }})
+                                        </span>
+                                        <span class="badge bg-secondary" *ngIf="!member.isEncrypted">
+                                            🔓 Plaintext
+                                        </span>
                                     </td>
                                     <td class="small text-muted">{{ formatClusterDate(member.lastSeenAt) }}</td>
                                     <td>
@@ -1376,6 +1430,10 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     clusterMembers: SyncClusterMember[] = []
     isLoadingCluster: boolean = false
 
+    // Quick sync unlock input
+    syncUnlockPasswordInput: string = ''
+    showSyncUnlockPassword: boolean = false
+
     isCheckingUpdates: boolean = false
     hasCheckedUpdates: boolean = false
     updateInfo: UpdateInfo | null = null
@@ -1437,6 +1495,8 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             maxBackupsToKeep: saved.maxBackupsToKeep ?? 10,
             encryptionEnabled: saved.encryptionEnabled ?? false,
             encryptionPassword: saved.encryptionPassword || '',
+            keyEpoch: saved.keyEpoch ?? 1,
+            keyUpdatedAt: saved.keyUpdatedAt ?? null,
         }
         this.isDirty = false
         this.isChangingPassword = false
@@ -1538,6 +1598,21 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         } else {
             this.notifications.info(`Device ID: ${this.thisDeviceId}`)
         }
+    }
+
+    async applySyncUnlockPassword(): Promise<void> {
+        const pass = (this.syncUnlockPasswordInput || '').trim()
+        if (!pass) return
+
+        this.formData.encryptionEnabled = true
+        this.formData.encryptionPassword = pass
+        if (this.syncEngine.passwordErrorEpoch) {
+            this.formData.keyEpoch = this.syncEngine.passwordErrorEpoch
+            this.formData.keyUpdatedAt = Date.now()
+        }
+        await this.saveSettings()
+        this.syncUnlockPasswordInput = ''
+        await this.triggerSyncNow()
     }
 
     async triggerSyncNow(): Promise<void> {
@@ -1688,14 +1763,23 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         // 2. Update form and config
         this.formData.encryptionPassword = newPass
         this.formData.encryptionEnabled = true
+        this.formData.keyEpoch = (this.formData.keyEpoch || 1) + 1
+        this.formData.keyUpdatedAt = Date.now()
         await this.saveSettings()
 
         this.isChangingPassword = false
         this.oldPasswordInput = ''
         this.newPasswordInput = ''
         this.confirmPasswordInput = ''
-        this.notifications.notice('Master encryption password updated successfully!')
+        this.notifications.notice(`Master encryption password updated successfully! (Key Epoch #${this.formData.keyEpoch})`)
         await this.loadLocalBackups()
+
+        // 3. Immediately re-encrypt and publish cloud sync state if configured
+        if (this.isSyncConfigured()) {
+            this.triggerSyncNow().catch(err => {
+                console.warn('[tabby-sync-and-backup] Post-password change sync notice:', err)
+            })
+        }
     }
 
     getEncryptionLabel(item: BackupSnapshotItem): string {

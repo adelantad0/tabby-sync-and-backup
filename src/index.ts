@@ -143,6 +143,8 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
             // Security settings
             encryptionEnabled: false,
             encryptionPassword: '',
+            keyEpoch: 1,
+            keyUpdatedAt: null,
         },
     }
 }

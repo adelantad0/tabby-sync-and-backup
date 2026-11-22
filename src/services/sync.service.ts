@@ -6,7 +6,10 @@ import {
     SyncDeviceState,
     SyncClusterMember,
     SyncClusterRegistry,
+    SyncPasswordRequiredError,
+    SyncPasswordMismatchError,
 } from '../models/sync.model'
+import { CryptoService } from './crypto.service'
 
 export interface ConnectionTestResult {
     success: boolean
@@ -83,7 +86,40 @@ export class SyncService {
      */
     async publishDeviceState(target: SyncTargetConfig, state: SyncDeviceState): Promise<void> {
         await this.ensureSyncStructure(target)
-        const payload = JSON.stringify(state, null, 2)
+
+        const cfg = this.config.store?.syncAndBackup || {}
+        const encEnabled = !!cfg.encryptionEnabled
+        const masterPassword = (cfg.encryptionPassword || '').trim()
+        const keyEpoch = cfg.keyEpoch || 1
+        const keyUpdatedAt = cfg.keyUpdatedAt || Date.now()
+
+        // Deep copy state to avoid mutating caller object
+        const stateToPublish: SyncDeviceState = JSON.parse(JSON.stringify(state))
+
+        if (encEnabled && masterPassword) {
+            const payloadToEncrypt = {
+                profiles: stateToPublish.profiles || {},
+                profileGroups: stateToPublish.profileGroups || {},
+                vault: stateToPublish.vault,
+                themes: stateToPublish.themes,
+            }
+            const encryptedPayload = CryptoService.encrypt(JSON.stringify(payloadToEncrypt), masterPassword)
+
+            stateToPublish.isEncrypted = true
+            stateToPublish.keyEpoch = keyEpoch
+            stateToPublish.keyUpdatedAt = keyUpdatedAt
+            stateToPublish.encryptedPayload = encryptedPayload
+            stateToPublish.profiles = {}
+            stateToPublish.profileGroups = {}
+            delete stateToPublish.vault
+            delete stateToPublish.themes
+        } else {
+            stateToPublish.isEncrypted = false
+            stateToPublish.keyEpoch = 1
+            delete stateToPublish.encryptedPayload
+        }
+
+        const payload = JSON.stringify(stateToPublish, null, 2)
 
         if (target.provider === 'local') {
             const root = (target.localSyncPath || '').trim()
@@ -121,6 +157,38 @@ export class SyncService {
     }
 
     /**
+     * Decrypt remote device state payload if encrypted
+     */
+    private decryptDeviceState(rawState: SyncDeviceState): SyncDeviceState {
+        if (!rawState.isEncrypted || !rawState.encryptedPayload) {
+            return rawState
+        }
+
+        const cfg = this.config.store?.syncAndBackup || {}
+        const localPassword = (cfg.encryptionPassword || '').trim()
+        const localEpoch = cfg.keyEpoch || 1
+        const remoteEpoch = rawState.keyEpoch || 1
+        const deviceName = rawState.deviceName || rawState.deviceId
+
+        if (!localPassword) {
+            throw new SyncPasswordRequiredError(deviceName, remoteEpoch)
+        }
+
+        try {
+            const decryptedJson = CryptoService.decrypt(rawState.encryptedPayload, localPassword)
+            const decryptedData = JSON.parse(decryptedJson)
+            rawState.profiles = decryptedData.profiles || {}
+            rawState.profileGroups = decryptedData.profileGroups || {}
+            rawState.vault = decryptedData.vault
+            rawState.themes = decryptedData.themes
+            return rawState
+        } catch (e: any) {
+            console.warn(`[tabby-sync-and-backup] Decryption failed for device ${deviceName}:`, e)
+            throw new SyncPasswordMismatchError(deviceName, remoteEpoch, localEpoch)
+        }
+    }
+
+    /**
      * Read all device states in sync/devices/*.json across the cluster
      */
     async fetchClusterDeviceStates(target: SyncTargetConfig): Promise<SyncDeviceState[]> {
@@ -137,10 +205,14 @@ export class SyncService {
                 try {
                     const content = fs.readFileSync(path.join(devicesDir, file), 'utf8')
                     const parsed: SyncDeviceState = JSON.parse(content)
-                    if (parsed && parsed.deviceId && parsed.profiles) {
-                        states.push(parsed)
+                    if (parsed && parsed.deviceId) {
+                        const decrypted = this.decryptDeviceState(parsed)
+                        states.push(decrypted)
                     }
                 } catch (e) {
+                    if (e instanceof SyncPasswordRequiredError || e instanceof SyncPasswordMismatchError) {
+                        throw e
+                    }
                     console.warn(`[tabby-sync-and-backup] Failed to parse device file ${file}:`, e)
                 }
             }
@@ -187,11 +259,15 @@ export class SyncService {
                     if (fileRes.ok) {
                         const text = await fileRes.text()
                         const parsed: SyncDeviceState = JSON.parse(text)
-                        if (parsed && parsed.deviceId && parsed.profiles) {
-                            states.push(parsed)
+                        if (parsed && parsed.deviceId) {
+                            const decrypted = this.decryptDeviceState(parsed)
+                            states.push(decrypted)
                         }
                     }
                 } catch (e) {
+                    if (e instanceof SyncPasswordRequiredError || e instanceof SyncPasswordMismatchError) {
+                        throw e
+                    }
                     console.warn(`[tabby-sync-and-backup] Failed to fetch device state from ${href}:`, e)
                 }
             }
@@ -216,6 +292,10 @@ export class SyncService {
         if (existing && existing.members) {
             registry = existing
         }
+
+        const cfg = this.config.store?.syncAndBackup || {}
+        member.isEncrypted = !!cfg.encryptionEnabled && !!cfg.encryptionPassword
+        member.keyEpoch = cfg.keyEpoch || 1
 
         registry.members[member.deviceId] = member
         registry.updatedAt = new Date().toISOString()

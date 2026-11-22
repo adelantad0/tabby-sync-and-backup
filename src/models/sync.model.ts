@@ -62,6 +62,10 @@ export interface SyncDeviceState {
     deviceName: string
     platform: string
     updatedAt: string
+    isEncrypted?: boolean
+    keyEpoch?: number
+    keyUpdatedAt?: number
+    encryptedPayload?: string
     profiles: Record<string, SyncProfileEntry>
     profileGroups?: Record<string, SyncProfileGroupEntry>
     vault?: SyncVaultState
@@ -77,6 +81,8 @@ export interface SyncClusterMember {
     platform: string
     lastSeenAt: string
     formatVersion: number
+    isEncrypted?: boolean
+    keyEpoch?: number
 }
 
 /**
@@ -101,4 +107,31 @@ export interface SyncMergeResult {
     groupsDeleted: number
     vaultUpdated: boolean
     themesUpdated: number
+}
+
+/**
+ * Thrown when remote device data is encrypted, but no master password is set locally
+ */
+export class SyncPasswordRequiredError extends Error {
+    constructor(
+        public peerDeviceName: string,
+        public remoteEpoch: number = 1,
+    ) {
+        super(`Master password required: sync state from "${peerDeviceName}" is encrypted (Key Epoch #${remoteEpoch})`)
+        this.name = 'SyncPasswordRequiredError'
+    }
+}
+
+/**
+ * Thrown when local master password cannot decrypt remote peer's state (key changed or incorrect)
+ */
+export class SyncPasswordMismatchError extends Error {
+    constructor(
+        public peerDeviceName: string,
+        public remoteEpoch: number = 1,
+        public localEpoch: number = 1,
+    ) {
+        super(`Master password mismatch: cannot decrypt sync state from "${peerDeviceName}" (Remote Epoch #${remoteEpoch}, Local Epoch #${localEpoch})`)
+        this.name = 'SyncPasswordMismatchError'
+    }
 }
