@@ -3,6 +3,7 @@ import { ConfigService, NotificationsService } from 'tabby-core'
 import * as fs from 'fs'
 import * as path from 'path'
 import { CryptoService, EncryptionStatus } from './crypto.service'
+import { DeviceIdentityService } from './device-identity.service'
 
 export type BackupTrigger = 'Manual' | 'Pre-Sync' | 'Startup' | 'Pre-Restore'
 
@@ -17,6 +18,15 @@ export interface BackupSnapshotItem {
     encryptionStatus: EncryptionStatus
     fullPath?: string
     remoteUrl?: string
+    deviceId?: string
+    deviceName?: string
+}
+
+export interface RemoteBackupDeviceItem {
+    deviceId: string
+    deviceName: string
+    count: number
+    isCurrent?: boolean
 }
 
 /**
@@ -81,6 +91,7 @@ export class BackupService {
     constructor(
         private config: ConfigService,
         private notifications: NotificationsService,
+        private deviceIdentity: DeviceIdentityService,
     ) {}
 
     // ==========================================
@@ -315,14 +326,75 @@ export class BackupService {
         return 'Not configured'
     }
 
-    async listRemoteBackups(): Promise<BackupSnapshotItem[]> {
+    async listRemoteBackups(targetDeviceId?: string): Promise<BackupSnapshotItem[]> {
         const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
 
         if (provider === 'local') {
-            return this.listRemoteLocalBackups()
+            return this.listRemoteLocalBackups(targetDeviceId)
         }
         if (provider === 'webdav') {
-            return this.listRemoteWebDAVBackups()
+            return this.listRemoteWebDAVBackups(targetDeviceId)
+        }
+
+        return []
+    }
+
+    async listRemoteBackupDevices(): Promise<RemoteBackupDeviceItem[]> {
+        const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
+        const currentDeviceId = this.deviceIdentity.getDeviceId()
+        const currentDeviceName = this.deviceIdentity.getDeviceName()
+        const nameMap = await this.getClusterDeviceNameMap()
+
+        if (provider === 'local') {
+            const syncPath = this.config.store?.syncAndBackup?.localSyncPath
+            if (!syncPath || !fs.existsSync(syncPath)) return []
+            const backupsDir = path.join(syncPath, 'backups')
+            if (!fs.existsSync(backupsDir)) return []
+
+            const entries = fs.readdirSync(backupsDir, { withFileTypes: true })
+            const devices: RemoteBackupDeviceItem[] = []
+            let legacyCount = 0
+
+            for (const entry of entries) {
+                if (entry.isDirectory()) {
+                    const devId = entry.name
+                    const devDirPath = path.join(backupsDir, devId)
+                    const files = fs.readdirSync(devDirPath).filter(f => f.startsWith('tabby-backup-') && f.endsWith('.yaml'))
+                    const devName = devId === currentDeviceId ? currentDeviceName : (nameMap[devId] || `Device (${devId.substring(0, 8)})`)
+                    devices.push({
+                        deviceId: devId,
+                        deviceName: devName,
+                        count: files.length,
+                        isCurrent: devId === currentDeviceId,
+                    })
+                } else if (entry.isFile() && entry.name.startsWith('tabby-backup-') && entry.name.endsWith('.yaml')) {
+                    legacyCount++
+                }
+            }
+
+            const currentDevEntry = devices.find(d => d.deviceId === currentDeviceId)
+            if (!currentDevEntry) {
+                devices.unshift({
+                    deviceId: currentDeviceId,
+                    deviceName: currentDeviceName,
+                    count: legacyCount,
+                    isCurrent: true,
+                })
+            } else if (legacyCount > 0 && currentDevEntry.count === 0) {
+                currentDevEntry.count = legacyCount
+            }
+
+            devices.sort((a, b) => {
+                if (a.isCurrent) return -1
+                if (b.isCurrent) return 1
+                return (a.deviceName || '').localeCompare(b.deviceName || '')
+            })
+
+            return devices
+        }
+
+        if (provider === 'webdav') {
+            return this.listRemoteWebDAVBackupDevices(nameMap)
         }
 
         return []
@@ -354,7 +426,7 @@ export class BackupService {
             throw new Error(`Unsupported remote backup provider: ${provider}`)
         }
 
-        // Apply remote retention rotation
+        // Apply remote retention rotation ONLY for current device
         const maxToKeep = this.config.store?.syncAndBackup?.maxBackupsToKeep || 10
         await this.rotateRemoteBackups(maxToKeep)
 
@@ -387,11 +459,22 @@ export class BackupService {
         if (provider === 'local') {
             const syncPath = this.config.store?.syncAndBackup?.localSyncPath
             if (!syncPath) throw new Error('Local sync directory path is not configured')
-            const remoteFile = path.join(syncPath, 'backups', item.filename)
+            let remoteFile = item.fullPath
+            if (!remoteFile || !fs.existsSync(remoteFile)) {
+                const devId = item.deviceId || this.deviceIdentity.getDeviceId()
+                remoteFile = path.join(syncPath, 'backups', devId, item.filename)
+                if (!fs.existsSync(remoteFile)) {
+                    remoteFile = path.join(syncPath, 'backups', item.filename)
+                }
+            }
             if (!fs.existsSync(remoteFile)) throw new Error(`Remote file does not exist: ${remoteFile}`)
             content = fs.readFileSync(remoteFile, 'utf8')
         } else if (provider === 'webdav') {
-            content = await this.downloadWebDAVFile(item.filename)
+            if (item.remoteUrl) {
+                content = await this.downloadWebDAVFileByUrl(item.remoteUrl)
+            } else {
+                content = await this.downloadWebDAVFile(item.filename, item.deviceId)
+            }
         }
 
         let targetConfigYaml = content
@@ -434,31 +517,51 @@ export class BackupService {
         }
     }
 
-    async deleteRemoteBackup(filename: string): Promise<void> {
+    async deleteRemoteBackup(itemOrFilename: BackupSnapshotItem | string, deviceId?: string): Promise<void> {
         const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
+        const filename = typeof itemOrFilename === 'string' ? itemOrFilename : itemOrFilename.filename
+        const fullPath = typeof itemOrFilename !== 'string' ? itemOrFilename.fullPath : undefined
+        const remoteUrl = typeof itemOrFilename !== 'string' ? itemOrFilename.remoteUrl : undefined
+        const targetDeviceId = (typeof itemOrFilename !== 'string' ? itemOrFilename.deviceId : deviceId) || this.deviceIdentity.getDeviceId()
 
         if (provider === 'local') {
             const syncPath = this.config.store?.syncAndBackup?.localSyncPath
             if (syncPath) {
-                const remoteFile = path.join(syncPath, 'backups', filename)
-                if (fs.existsSync(remoteFile)) {
-                    fs.unlinkSync(remoteFile)
+                if (fullPath && fs.existsSync(fullPath)) {
+                    fs.unlinkSync(fullPath)
+                    return
+                }
+                const deviceFile = path.join(syncPath, 'backups', targetDeviceId, filename)
+                if (fs.existsSync(deviceFile)) {
+                    fs.unlinkSync(deviceFile)
+                    return
+                }
+                const legacyFile = path.join(syncPath, 'backups', filename)
+                if (fs.existsSync(legacyFile)) {
+                    fs.unlinkSync(legacyFile)
+                    return
                 }
             }
         } else if (provider === 'webdav') {
-            await this.deleteWebDAVFile(filename)
+            if (remoteUrl) {
+                await this.deleteWebDAVFileByUrl(remoteUrl)
+            } else {
+                await this.deleteWebDAVFile(filename, targetDeviceId)
+            }
         }
     }
 
     async rotateRemoteBackups(maxToKeep: number): Promise<void> {
         try {
-            const remoteSnapshots = await this.listRemoteBackups()
-            if (remoteSnapshots.length > maxToKeep) {
-                const excess = remoteSnapshots.slice(maxToKeep)
+            const currentDeviceId = this.deviceIdentity.getDeviceId()
+            // Only rotate snapshots belonging to THIS device
+            const myRemoteSnapshots = await this.listRemoteBackups(currentDeviceId)
+            if (myRemoteSnapshots.length > maxToKeep) {
+                const excess = myRemoteSnapshots.slice(maxToKeep)
                 for (const item of excess) {
                     try {
-                        await this.deleteRemoteBackup(item.filename)
-                        console.log(`[tabby-sync-and-backup] Rotated remote backup: ${item.filename}`)
+                        await this.deleteRemoteBackup(item)
+                        console.log(`[tabby-sync-and-backup] Rotated remote backup for device ${currentDeviceId}: ${item.filename}`)
                     } catch (e) {
                         console.error(`[tabby-sync-and-backup] Failed to rotate remote backup ${item.filename}:`, e)
                     }
@@ -471,61 +574,144 @@ export class BackupService {
 
     // --- Private Remote Local Helpers ---
 
-    private getRemoteLocalBackupsDir(): string {
+    private async getClusterDeviceNameMap(): Promise<Record<string, string>> {
+        const nameMap: Record<string, string> = {}
+        try {
+            const provider = this.config.store?.syncAndBackup?.syncProvider || 'webdav'
+            if (provider === 'local') {
+                const syncPath = this.config.store?.syncAndBackup?.localSyncPath
+                if (syncPath) {
+                    const clusterFile = path.join(syncPath, 'sync', 'cluster.json')
+                    if (fs.existsSync(clusterFile)) {
+                        const parsed = JSON.parse(fs.readFileSync(clusterFile, 'utf8'))
+                        if (parsed && parsed.members) {
+                            for (const [id, member] of Object.entries<any>(parsed.members)) {
+                                if (member?.deviceName) {
+                                    nameMap[id] = member.deviceName
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (provider === 'webdav') {
+                let baseUrl = (this.config.store?.syncAndBackup?.webdavUrl || '').trim()
+                if (baseUrl) {
+                    if (!baseUrl.endsWith('/')) baseUrl += '/'
+                    const targetUrl = `${baseUrl}sync/cluster.json`
+                    const res = await fetch(targetUrl, {
+                        method: 'GET',
+                        headers: this.getWebDAVAuthHeader(),
+                    })
+                    if (res.ok) {
+                        const parsed = JSON.parse(await res.text())
+                        if (parsed && parsed.members) {
+                            for (const [id, member] of Object.entries<any>(parsed.members)) {
+                                if (member?.deviceName) {
+                                    nameMap[id] = member.deviceName
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not fetch cluster device names for backups:', e)
+        }
+        return nameMap
+    }
+
+    private getRemoteLocalBackupsDir(deviceId?: string): string {
         const syncPath = this.config.store?.syncAndBackup?.localSyncPath
         if (!syncPath) throw new Error('Local sync path is not specified in settings')
-        const remoteBackupsDir = path.join(syncPath, 'backups')
+        const devId = deviceId || this.deviceIdentity.getDeviceId()
+        const remoteBackupsDir = path.join(syncPath, 'backups', devId)
         if (!fs.existsSync(remoteBackupsDir)) {
             fs.mkdirSync(remoteBackupsDir, { recursive: true })
         }
         return remoteBackupsDir
     }
 
-    private async listRemoteLocalBackups(): Promise<BackupSnapshotItem[]> {
+    private async listRemoteLocalBackups(targetDeviceId?: string): Promise<BackupSnapshotItem[]> {
         const syncPath = this.config.store?.syncAndBackup?.localSyncPath
         if (!syncPath || !fs.existsSync(syncPath)) return []
 
-        const remoteDir = path.join(syncPath, 'backups')
-        if (!fs.existsSync(remoteDir)) return []
+        const backupsBaseDir = path.join(syncPath, 'backups')
+        if (!fs.existsSync(backupsBaseDir)) return []
 
-        const files = fs.readdirSync(remoteDir)
-        const snapshots: BackupSnapshotItem[] = []
+        const currentDeviceId = this.deviceIdentity.getDeviceId()
+        const currentDeviceName = this.deviceIdentity.getDeviceName()
+        const nameMap = await this.getClusterDeviceNameMap()
         const currentPassword = this.config.store?.syncAndBackup?.encryptionPassword || ''
+        const snapshots: BackupSnapshotItem[] = []
 
-        for (const file of files) {
-            if (file.startsWith('tabby-backup-') && file.endsWith('.yaml')) {
-                const fullPath = path.join(remoteDir, file)
-                try {
-                    const stats = fs.statSync(fullPath)
-                    const parsed = parseBackupFilename(file)
-                    const ts = parsed.timestamp || stats.mtimeMs
+        const scanDirectoryForBackups = (dir: string, devId: string, devName: string) => {
+            if (!fs.existsSync(dir)) return
+            try {
+                const files = fs.readdirSync(dir)
+                for (const file of files) {
+                    if (file.startsWith('tabby-backup-') && file.endsWith('.yaml')) {
+                        const fullPath = path.join(dir, file)
+                        try {
+                            const stats = fs.statSync(fullPath)
+                            const parsed = parseBackupFilename(file)
+                            const ts = parsed.timestamp || stats.mtimeMs
 
-                    let encStatus: EncryptionStatus = 'unencrypted'
-                    try {
-                        const fd = fs.openSync(fullPath, 'r')
-                        const buf = Buffer.alloc(1024)
-                        const bytesRead = fs.readSync(fd, buf, 0, 1024, 0)
-                        fs.closeSync(fd)
-                        const sample = buf.toString('utf8', 0, bytesRead)
-                        encStatus = CryptoService.checkPassword(sample, currentPassword)
-                    } catch (e) {
-                        console.warn(`[tabby-sync-and-backup] Header check failed for remote ${file}:`, e)
+                            let encStatus: EncryptionStatus = 'unencrypted'
+                            try {
+                                const fd = fs.openSync(fullPath, 'r')
+                                const buf = Buffer.alloc(1024)
+                                const bytesRead = fs.readSync(fd, buf, 0, 1024, 0)
+                                fs.closeSync(fd)
+                                const sample = buf.toString('utf8', 0, bytesRead)
+                                encStatus = CryptoService.checkPassword(sample, currentPassword)
+                            } catch (e) {
+                                console.warn(`[tabby-sync-and-backup] Header check failed for remote ${file}:`, e)
+                            }
+
+                            snapshots.push({
+                                id: `${devId}_${file}`,
+                                filename: file,
+                                timestamp: ts,
+                                formattedDate: formatTimestamp(new Date(ts)),
+                                sizeKb: Math.round((stats.size / 1024) * 10) / 10,
+                                trigger: parsed.trigger,
+                                location: 'remote',
+                                encryptionStatus: encStatus,
+                                fullPath,
+                                deviceId: devId,
+                                deviceName: devName,
+                            })
+                        } catch (e) {
+                            console.error(`[tabby-sync-and-backup] Could not stat remote file ${file}:`, e)
+                        }
                     }
-
-                    snapshots.push({
-                        id: file,
-                        filename: file,
-                        timestamp: ts,
-                        formattedDate: formatTimestamp(new Date(ts)),
-                        sizeKb: Math.round((stats.size / 1024) * 10) / 10,
-                        trigger: parsed.trigger,
-                        location: 'remote',
-                        encryptionStatus: encStatus,
-                        fullPath,
-                    })
-                } catch (e) {
-                    console.error(`[tabby-sync-and-backup] Could not stat remote file ${file}:`, e)
                 }
+            } catch (err) {
+                console.warn(`[tabby-sync-and-backup] Could not scan directory ${dir}:`, err)
+            }
+        }
+
+        const devToScan = targetDeviceId || currentDeviceId
+
+        if (devToScan === 'all') {
+            const entries = fs.readdirSync(backupsBaseDir, { withFileTypes: true })
+            for (const entry of entries) {
+                if (entry.isDirectory()) {
+                    const devId = entry.name
+                    const devName = devId === currentDeviceId ? currentDeviceName : (nameMap[devId] || `Device (${devId.substring(0, 8)})`)
+                    scanDirectoryForBackups(path.join(backupsBaseDir, devId), devId, devName)
+                }
+            }
+            // Also include legacy flat backups
+            scanDirectoryForBackups(backupsBaseDir, 'legacy', 'Legacy Backups')
+        } else {
+            const deviceDir = path.join(backupsBaseDir, devToScan)
+            const devName = devToScan === currentDeviceId ? currentDeviceName : (nameMap[devToScan] || `Device (${devToScan.substring(0, 8)})`)
+            scanDirectoryForBackups(deviceDir, devToScan, devName)
+
+            // If current device has no backups in subfolder, check legacy flat backups
+            if (devToScan === currentDeviceId && snapshots.length === 0) {
+                scanDirectoryForBackups(backupsBaseDir, currentDeviceId, currentDeviceName)
             }
         }
 
@@ -539,7 +725,9 @@ export class BackupService {
         now: Date,
         trigger: BackupTrigger,
     ): Promise<BackupSnapshotItem> {
-        const remoteDir = this.getRemoteLocalBackupsDir()
+        const deviceId = this.deviceIdentity.getDeviceId()
+        const deviceName = this.deviceIdentity.getDeviceName()
+        const remoteDir = this.getRemoteLocalBackupsDir(deviceId)
         const fullPath = path.join(remoteDir, filename)
         fs.writeFileSync(fullPath, content, 'utf8')
         const stats = fs.statSync(fullPath)
@@ -547,7 +735,7 @@ export class BackupService {
         const encStatus = CryptoService.checkPassword(content, currentPassword)
 
         return {
-            id: filename,
+            id: `${deviceId}_${filename}`,
             filename,
             timestamp: now.getTime(),
             formattedDate: formatTimestamp(now),
@@ -556,6 +744,8 @@ export class BackupService {
             location: 'remote',
             encryptionStatus: encStatus,
             fullPath,
+            deviceId,
+            deviceName,
         }
     }
 
@@ -589,58 +779,208 @@ export class BackupService {
         }
     }
 
-    private async listRemoteWebDAVBackups(): Promise<BackupSnapshotItem[]> {
+    private async ensureWebDAVDeviceCollection(deviceId?: string): Promise<void> {
+        await this.ensureWebDAVBackupsCollection()
+        const devId = deviceId || this.deviceIdentity.getDeviceId()
+        const url = `${this.getWebDAVBackupsUrl()}${devId}/`
+        try {
+            await fetch(url, {
+                method: 'MKCOL',
+                headers: this.getWebDAVAuthHeader(),
+            })
+        } catch {
+            // MKCOL returns 405 if collection already exists
+        }
+    }
+
+    private async listRemoteWebDAVBackups(targetDeviceId?: string): Promise<BackupSnapshotItem[]> {
         const baseUrl = this.getWebDAVBackupsUrl()
         await this.ensureWebDAVBackupsCollection()
 
-        const response = await fetch(baseUrl, {
-            method: 'PROPFIND',
-            headers: {
-                ...this.getWebDAVAuthHeader(),
-                Depth: '1',
-                'Content-Type': 'application/xml',
-            },
-        })
-
-        if (!response.ok) {
-            if (response.status === 404) return []
-            throw new Error(`WebDAV PROPFIND failed: HTTP ${response.status}`)
-        }
-
-        const xmlText = await response.text()
-        const parser = new DOMParser()
-        const doc = parser.parseFromString(xmlText, 'text/xml')
-        const responseNodes = doc.querySelectorAll('response')
+        const currentDeviceId = this.deviceIdentity.getDeviceId()
+        const currentDeviceName = this.deviceIdentity.getDeviceName()
+        const nameMap = await this.getClusterDeviceNameMap()
+        const devToScan = targetDeviceId || currentDeviceId
         const snapshots: BackupSnapshotItem[] = []
 
-        responseNodes.forEach(node => {
-            const href = node.querySelector('href')?.textContent || ''
-            const rawFilename = decodeURIComponent(href.split('/').filter(Boolean).pop() || '')
-
-            if (rawFilename.startsWith('tabby-backup-') && rawFilename.endsWith('.yaml')) {
-                const contentLengthNode = node.querySelector('getcontentlength')
-                const lastModifiedNode = node.querySelector('getlastmodified')
-                const sizeBytes = parseInt(contentLengthNode?.textContent || '0', 10)
-                const parsed = parseBackupFilename(rawFilename)
-                const lastModified = lastModifiedNode?.textContent ? new Date(lastModifiedNode.textContent).getTime() : parsed.timestamp
-                const ts = parsed.timestamp || lastModified
-
-                snapshots.push({
-                    id: rawFilename,
-                    filename: rawFilename,
-                    timestamp: ts,
-                    formattedDate: formatTimestamp(new Date(ts)),
-                    sizeKb: Math.round((sizeBytes / 1024) * 10) / 10,
-                    trigger: parsed.trigger,
-                    location: 'remote',
-                    encryptionStatus: 'encrypted_unknown', // Will be verified on restore or on demand
-                    remoteUrl: `${baseUrl}${rawFilename}`,
+        const fetchWebDAVDirSnapshots = async (dirUrl: string, devId: string, devName: string): Promise<BackupSnapshotItem[]> => {
+            try {
+                const response = await fetch(dirUrl, {
+                    method: 'PROPFIND',
+                    headers: {
+                        ...this.getWebDAVAuthHeader(),
+                        Depth: '1',
+                        'Content-Type': 'application/xml',
+                    },
                 })
+                if (!response.ok) return []
+                const xmlText = await response.text()
+                const parser = new DOMParser()
+                const doc = parser.parseFromString(xmlText, 'text/xml')
+                const responseNodes = doc.querySelectorAll('response')
+                const items: BackupSnapshotItem[] = []
+
+                responseNodes.forEach(node => {
+                    const href = node.querySelector('href')?.textContent || ''
+                    const rawFilename = decodeURIComponent(href.split('/').filter(Boolean).pop() || '')
+
+                    if (rawFilename.startsWith('tabby-backup-') && rawFilename.endsWith('.yaml')) {
+                        const contentLengthNode = node.querySelector('getcontentlength')
+                        const lastModifiedNode = node.querySelector('getlastmodified')
+                        const sizeBytes = parseInt(contentLengthNode?.textContent || '0', 10)
+                        const parsed = parseBackupFilename(rawFilename)
+                        const lastModified = lastModifiedNode?.textContent ? new Date(lastModifiedNode.textContent).getTime() : parsed.timestamp
+                        const ts = parsed.timestamp || lastModified
+
+                        let fileUrl = href
+                        if (!fileUrl.startsWith('http')) {
+                            try {
+                                const origin = new URL(this.config.store?.syncAndBackup?.webdavUrl || '').origin
+                                fileUrl = `${origin}${href.startsWith('/') ? '' : '/'}${href}`
+                            } catch {
+                                fileUrl = `${dirUrl}${rawFilename}`
+                            }
+                        }
+
+                        items.push({
+                            id: `${devId}_${rawFilename}`,
+                            filename: rawFilename,
+                            timestamp: ts,
+                            formattedDate: formatTimestamp(new Date(ts)),
+                            sizeKb: Math.round((sizeBytes / 1024) * 10) / 10,
+                            trigger: parsed.trigger,
+                            location: 'remote',
+                            encryptionStatus: 'encrypted_unknown',
+                            remoteUrl: fileUrl,
+                            deviceId: devId,
+                            deviceName: devName,
+                        })
+                    }
+                })
+                return items
+            } catch (e) {
+                console.warn(`[tabby-sync-and-backup] WebDAV fetch failed for ${dirUrl}:`, e)
+                return []
             }
-        })
+        }
+
+        if (devToScan === 'all') {
+            const devices = await this.listRemoteWebDAVBackupDevices(nameMap)
+            for (const d of devices) {
+                const devDirUrl = `${baseUrl}${d.deviceId}/`
+                const items = await fetchWebDAVDirSnapshots(devDirUrl, d.deviceId, d.deviceName)
+                snapshots.push(...items)
+            }
+            const legacyItems = await fetchWebDAVDirSnapshots(baseUrl, 'legacy', 'Legacy Backups')
+            snapshots.push(...legacyItems)
+        } else {
+            const devDirUrl = `${baseUrl}${devToScan}/`
+            const devName = devToScan === currentDeviceId ? currentDeviceName : (nameMap[devToScan] || `Device (${devToScan.substring(0, 8)})`)
+            const items = await fetchWebDAVDirSnapshots(devDirUrl, devToScan, devName)
+            snapshots.push(...items)
+
+            if (devToScan === currentDeviceId && snapshots.length === 0) {
+                const legacyItems = await fetchWebDAVDirSnapshots(baseUrl, currentDeviceId, currentDeviceName)
+                snapshots.push(...legacyItems)
+            }
+        }
 
         snapshots.sort((a, b) => b.timestamp - a.timestamp)
         return snapshots
+    }
+
+    private async listRemoteWebDAVBackupDevices(nameMap: Record<string, string>): Promise<RemoteBackupDeviceItem[]> {
+        const baseUrl = this.getWebDAVBackupsUrl()
+        await this.ensureWebDAVBackupsCollection()
+
+        const currentDeviceId = this.deviceIdentity.getDeviceId()
+        const currentDeviceName = this.deviceIdentity.getDeviceName()
+        const devices: RemoteBackupDeviceItem[] = []
+
+        try {
+            const response = await fetch(baseUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    ...this.getWebDAVAuthHeader(),
+                    Depth: '1',
+                    'Content-Type': 'application/xml',
+                },
+            })
+            if (!response.ok) return []
+            const xmlText = await response.text()
+            const parser = new DOMParser()
+            const doc = parser.parseFromString(xmlText, 'text/xml')
+            const responseNodes = doc.querySelectorAll('response')
+
+            let legacyCount = 0
+            const foundDevIds = new Set<string>()
+
+            responseNodes.forEach(node => {
+                const href = node.querySelector('href')?.textContent || ''
+                const cleanHref = href.endsWith('/') ? href.slice(0, -1) : href
+                const segment = decodeURIComponent(cleanHref.split('/').filter(Boolean).pop() || '')
+
+                const isCollection = !!(node.querySelector('collection') || node.querySelector('resourcetype > collection'))
+
+                if (isCollection && segment && segment !== 'backups') {
+                    foundDevIds.add(segment)
+                } else if (segment.startsWith('tabby-backup-') && segment.endsWith('.yaml')) {
+                    legacyCount++
+                }
+            })
+
+            foundDevIds.add(currentDeviceId)
+
+            for (const devId of Array.from(foundDevIds)) {
+                let count = 0
+                try {
+                    const devDirUrl = `${baseUrl}${devId}/`
+                    const res = await fetch(devDirUrl, {
+                        method: 'PROPFIND',
+                        headers: {
+                            ...this.getWebDAVAuthHeader(),
+                            Depth: '1',
+                            'Content-Type': 'application/xml',
+                        },
+                    })
+                    if (res.ok) {
+                        const xml = await res.text()
+                        const devDoc = parser.parseFromString(xml, 'text/xml')
+                        devDoc.querySelectorAll('response').forEach(n => {
+                            const h = n.querySelector('href')?.textContent || ''
+                            const fn = decodeURIComponent(h.split('/').filter(Boolean).pop() || '')
+                            if (fn.startsWith('tabby-backup-') && fn.endsWith('.yaml')) {
+                                count++
+                            }
+                        })
+                    }
+                } catch {
+                    // Ignore error for missing collection
+                }
+
+                if (devId === currentDeviceId && count === 0 && legacyCount > 0) {
+                    count = legacyCount
+                }
+
+                const devName = devId === currentDeviceId ? currentDeviceName : (nameMap[devId] || `Device (${devId.substring(0, 8)})`)
+                devices.push({
+                    deviceId: devId,
+                    deviceName: devName,
+                    count,
+                    isCurrent: devId === currentDeviceId,
+                })
+            }
+
+            devices.sort((a, b) => {
+                if (a.isCurrent) return -1
+                if (b.isCurrent) return 1
+                return (a.deviceName || '').localeCompare(b.deviceName || '')
+            })
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not list WebDAV backup devices:', e)
+        }
+
+        return devices
     }
 
     private async uploadWebDAVFile(
@@ -649,8 +989,10 @@ export class BackupService {
         now: Date,
         trigger: BackupTrigger,
     ): Promise<BackupSnapshotItem> {
-        await this.ensureWebDAVBackupsCollection()
-        const fileUrl = `${this.getWebDAVBackupsUrl()}${filename}`
+        const deviceId = this.deviceIdentity.getDeviceId()
+        const deviceName = this.deviceIdentity.getDeviceName()
+        await this.ensureWebDAVDeviceCollection(deviceId)
+        const fileUrl = `${this.getWebDAVBackupsUrl()}${deviceId}/${filename}`
 
         const response = await fetch(fileUrl, {
             method: 'PUT',
@@ -669,7 +1011,7 @@ export class BackupService {
         const encStatus = CryptoService.checkPassword(content, currentPassword)
 
         return {
-            id: filename,
+            id: `${deviceId}_${filename}`,
             filename,
             timestamp: now.getTime(),
             formattedDate: formatTimestamp(now),
@@ -678,30 +1020,68 @@ export class BackupService {
             location: 'remote',
             encryptionStatus: encStatus,
             remoteUrl: fileUrl,
+            deviceId,
+            deviceName,
         }
     }
 
-    private async downloadWebDAVFile(filename: string): Promise<string> {
-        const fileUrl = `${this.getWebDAVBackupsUrl()}${filename}`
-        const response = await fetch(fileUrl, {
+    private async downloadWebDAVFile(filename: string, deviceId?: string): Promise<string> {
+        const devId = deviceId || this.deviceIdentity.getDeviceId()
+        const baseUrl = this.getWebDAVBackupsUrl()
+        let fileUrl = `${baseUrl}${devId}/${filename}`
+        let response = await fetch(fileUrl, {
             method: 'GET',
             headers: this.getWebDAVAuthHeader(),
         })
-
+        if (response.status === 404) {
+            fileUrl = `${baseUrl}${filename}`
+            response = await fetch(fileUrl, {
+                method: 'GET',
+                headers: this.getWebDAVAuthHeader(),
+            })
+        }
         if (!response.ok) {
             throw new Error(`WebDAV GET failed: HTTP ${response.status}`)
         }
-
         return response.text()
     }
 
-    private async deleteWebDAVFile(filename: string): Promise<void> {
-        const fileUrl = `${this.getWebDAVBackupsUrl()}${filename}`
-        const response = await fetch(fileUrl, {
+    private async downloadWebDAVFileByUrl(url: string): Promise<string> {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: this.getWebDAVAuthHeader(),
+        })
+        if (!response.ok) {
+            throw new Error(`WebDAV GET failed: HTTP ${response.status}`)
+        }
+        return response.text()
+    }
+
+    private async deleteWebDAVFile(filename: string, deviceId?: string): Promise<void> {
+        const devId = deviceId || this.deviceIdentity.getDeviceId()
+        const baseUrl = this.getWebDAVBackupsUrl()
+        let fileUrl = `${baseUrl}${devId}/${filename}`
+        let response = await fetch(fileUrl, {
             method: 'DELETE',
             headers: this.getWebDAVAuthHeader(),
         })
+        if (response.status === 404) {
+            fileUrl = `${baseUrl}${filename}`
+            response = await fetch(fileUrl, {
+                method: 'DELETE',
+                headers: this.getWebDAVAuthHeader(),
+            })
+        }
+        if (!response.ok && response.status !== 204 && response.status !== 404) {
+            throw new Error(`WebDAV DELETE failed: HTTP ${response.status}`)
+        }
+    }
 
+    private async deleteWebDAVFileByUrl(url: string): Promise<void> {
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: this.getWebDAVAuthHeader(),
+        })
         if (!response.ok && response.status !== 204 && response.status !== 404) {
             throw new Error(`WebDAV DELETE failed: HTTP ${response.status}`)
         }

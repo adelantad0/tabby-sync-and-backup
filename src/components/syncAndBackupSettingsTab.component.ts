@@ -1,6 +1,6 @@
 import { Component, HostBinding, OnInit } from '@angular/core'
 import { ConfigService, HostAppService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
-import { BackupService, BackupSnapshotItem } from '../services/backup.service'
+import { BackupService, BackupSnapshotItem, RemoteBackupDeviceItem } from '../services/backup.service'
 import { CryptoService, EncryptionStatus } from '../services/crypto.service'
 import { SyncService, ConnectionTestResult, SyncTargetConfig } from '../services/sync.service'
 import { DeviceIdentityService } from '../services/device-identity.service'
@@ -885,10 +885,28 @@ interface UpdateInfo {
 
                 <!-- When Sync IS configured: Real Remote Snapshots Table -->
                 <div class="card mb-3" [class.d-none]="!isSyncConfigured()">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div>
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
                             <span class="fw-bold">Remote Snapshots</span>
-                            <span class="badge bg-success ms-2">{{ remoteTargetDescription }}</span>
+                            <span class="badge bg-success">{{ remoteTargetDescription }}</span>
+
+                            <!-- Device Selector Dropdown -->
+                            <div class="input-group input-group-sm ms-2" style="width: auto;" *ngIf="remoteBackupDevices.length > 0">
+                                <span class="input-group-text bg-transparent text-muted py-0 px-2">🖥️ Device:</span>
+                                <select
+                                    class="form-select form-select-sm py-0"
+                                    [ngModel]="selectedRemoteBackupDeviceId"
+                                    (ngModelChange)="onRemoteDeviceChanged($event)"
+                                    style="width: auto; min-width: 170px;"
+                                >
+                                    <option *ngFor="let dev of remoteBackupDevices" [value]="dev.deviceId">
+                                        {{ dev.deviceName }}{{ dev.isCurrent ? ' (This Device)' : '' }} ({{ dev.count }})
+                                    </option>
+                                    <option value="all">
+                                        🌐 All Devices
+                                    </option>
+                                </select>
+                            </div>
                         </div>
                         <span class="text-muted small">Auto-rotated (Max: {{ formData.maxBackupsToKeep }})</span>
                     </div>
@@ -907,6 +925,7 @@ interface UpdateInfo {
                                 <thead>
                                     <tr>
                                         <th style="width: 170px;">Date &amp; Time</th>
+                                        <th *ngIf="selectedRemoteBackupDeviceId === 'all'" style="width: 150px;">Device</th>
                                         <th style="width: 110px;">Trigger</th>
                                         <th style="width: 150px;">Security</th>
                                         <th style="width: 80px;">Size</th>
@@ -916,6 +935,9 @@ interface UpdateInfo {
                                 <tbody>
                                     <tr *ngFor="let item of remoteBackups">
                                         <td class="font-monospace small text-nowrap">{{ item.formattedDate }}</td>
+                                        <td *ngIf="selectedRemoteBackupDeviceId === 'all'" class="small text-nowrap">
+                                            <span class="badge bg-secondary">{{ item.deviceName || item.deviceId?.substring(0, 8) || 'Unknown' }}</span>
+                                        </td>
                                         <td class="text-nowrap">
                                             <span
                                                 class="badge"
@@ -1431,6 +1453,8 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     localBackups: BackupSnapshotItem[] = []
     remoteBackups: BackupSnapshotItem[] = []
+    remoteBackupDevices: RemoteBackupDeviceItem[] = []
+    selectedRemoteBackupDeviceId: string = ''
     isLoadingBackups: boolean = false
     remoteTargetDescription: string = ''
 
@@ -1507,6 +1531,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.loadLocalChangelog()
         this.refreshChangelog().catch(() => null)
         await this.loadLocalBackups()
+        if (this.isSyncConfigured()) {
+            await this.loadRemoteBackups()
+        }
         await this.loadClusterDevices()
     }
 
@@ -1515,6 +1542,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.thisDeviceId = this.deviceIdentity.getDeviceId()
         this.thisDeviceName = this.deviceIdentity.getDeviceName()
         this.thisPlatform = this.deviceIdentity.getPlatform()
+        this.selectedRemoteBackupDeviceId = this.thisDeviceId
 
         this.formData = {
             syncEnabled: saved.syncEnabled ?? false,
@@ -1736,6 +1764,12 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
         this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.SETTINGS_SAVED'))
         await this.loadLocalBackups()
+        if (this.isSyncConfigured()) {
+            await this.loadRemoteBackups()
+        } else {
+            this.remoteBackups = []
+            this.remoteBackupDevices = []
+        }
     }
 
     discardChanges(): void {
@@ -1874,12 +1908,30 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     async loadRemoteBackups(): Promise<void> {
         if (!this.isSyncConfigured()) {
             this.remoteBackups = []
+            this.remoteBackupDevices = []
             return
         }
         this.isLoadingBackups = true
         this.remoteTargetDescription = this.backupService.getRemoteTargetDescription()
         try {
-            this.remoteBackups = await this.backupService.listRemoteBackups()
+            this.remoteBackupDevices = await this.backupService.listRemoteBackupDevices()
+            if (!this.selectedRemoteBackupDeviceId) {
+                this.selectedRemoteBackupDeviceId = this.thisDeviceId
+            }
+            this.remoteBackups = await this.backupService.listRemoteBackups(this.selectedRemoteBackupDeviceId)
+        } catch (e: any) {
+            this.notifications.error(`Could not fetch remote backups: ${e?.message || e}`)
+            this.remoteBackups = []
+        } finally {
+            this.isLoadingBackups = false
+        }
+    }
+
+    async onRemoteDeviceChanged(deviceId: string): Promise<void> {
+        this.selectedRemoteBackupDeviceId = deviceId
+        this.isLoadingBackups = true
+        try {
+            this.remoteBackups = await this.backupService.listRemoteBackups(this.selectedRemoteBackupDeviceId)
         } catch (e: any) {
             this.notifications.error(`Could not fetch remote backups: ${e?.message || e}`)
             this.remoteBackups = []
@@ -2037,7 +2089,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     async deleteRemoteBackup(item: BackupSnapshotItem): Promise<void> {
         try {
-            await this.backupService.deleteRemoteBackup(item.filename)
+            await this.backupService.deleteRemoteBackup(item)
             await this.loadRemoteBackups()
             this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.SNAPSHOT_DELETED_REMOTE'))
         } catch (e: any) {
