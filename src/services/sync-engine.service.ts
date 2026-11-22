@@ -1,9 +1,10 @@
 import { Injectable } from '@angular/core'
-import { ConfigService, NotificationsService } from 'tabby-core'
+import { ConfigService, NotificationsService, TranslateService } from 'tabby-core'
 import { SyncService } from './sync.service'
 import { DeviceIdentityService } from './device-identity.service'
 import { SyncMergerService } from './sync-merger.service'
 import { BackupService } from './backup.service'
+import { registerTranslations } from '../i18n'
 import {
     SyncMergeResult,
     SyncClusterMember,
@@ -34,7 +35,10 @@ export class SyncEngineService {
         private deviceIdentity: DeviceIdentityService,
         private syncMerger: SyncMergerService,
         private backupService: BackupService,
-    ) {}
+        private translate: TranslateService,
+    ) {
+        registerTranslations(this.translate)
+    }
 
     /**
      * Initialize automatic sync triggers (Startup, Window Focus, Periodic interval)

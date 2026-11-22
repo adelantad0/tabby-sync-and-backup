@@ -39,7 +39,7 @@ interface UpdateInfo {
     template: `
         <div class="d-flex align-items-center justify-content-between mb-3">
             <div>
-                <h3 class="m-0">Sync &amp; Backup</h3>
+                <h3 class="m-0">{{ 'SYNC_BACKUP.TITLE' | translate }}</h3>
                 <div class="text-muted small">
                     Synchronize your configuration across devices and manage local automated backups
                 </div>
@@ -1240,7 +1240,7 @@ interface UpdateInfo {
                         </button>
                     </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body changelog-scroll-container">
                     <div *ngIf="isLoadingChangelog && changelogEntries.length === 0" class="text-center py-3 text-muted">
                         <i class="fas fa-spinner fa-spin me-2"></i> Loading release history...
                     </div>
@@ -1284,6 +1284,25 @@ interface UpdateInfo {
             .card-header {
                 background-color: rgba(255, 255, 255, 0.05);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .changelog-scroll-container {
+                max-height: 400px;
+                overflow-y: auto;
+                padding-right: 12px;
+            }
+            .changelog-scroll-container::-webkit-scrollbar {
+                width: 6px;
+            }
+            .changelog-scroll-container::-webkit-scrollbar-track {
+                background: rgba(0, 0, 0, 0.15);
+                border-radius: 4px;
+            }
+            .changelog-scroll-container::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+            }
+            .changelog-scroll-container::-webkit-scrollbar-thumb:hover {
+                background: rgba(255, 255, 255, 0.35);
             }
             .changelog-body code {
                 background: rgba(255, 255, 255, 0.1);

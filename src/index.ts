@@ -9,6 +9,7 @@ import {
     HotkeyDescription,
     ConfigProvider,
     AppService,
+    TranslateService,
 } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
 
@@ -19,6 +20,7 @@ import { SyncService } from './services/sync.service'
 import { DeviceIdentityService } from './services/device-identity.service'
 import { SyncMergerService } from './services/sync-merger.service'
 import { SyncEngineService } from './services/sync-engine.service'
+import { registerTranslations } from './i18n'
 
 // @ts-ignore
 import syncIcon from './icons/sync.svg'
@@ -32,15 +34,17 @@ export class SyncAndBackupToolbarButtonProvider extends ToolbarButtonProvider {
         private notifications: NotificationsService,
         private app: AppService,
         private syncEngine: SyncEngineService,
+        private translate: TranslateService,
     ) {
         super()
+        registerTranslations(this.translate)
     }
 
     provide(): ToolbarButton[] {
         return [
             {
                 icon: syncIcon,
-                title: 'Sync & Backup: Synchronize Now',
+                title: this.translate.instant('SYNC_BACKUP.TOOLBAR.SYNC_NOW'),
                 weight: 5, // Positioned on the right toolbar section
                 click: async () => {
                     console.log('[tabby-sync-and-backup] Toolbar button clicked')
@@ -64,19 +68,21 @@ export class SyncAndBackupHotkeyProvider extends HotkeyProvider {
         private notifications: NotificationsService,
         private syncEngine: SyncEngineService,
         private backupService: BackupService,
+        private translate: TranslateService,
     ) {
         super()
+        registerTranslations(this.translate)
     }
 
     async provide(): Promise<HotkeyDescription[]> {
         return [
             {
                 id: 'sync-and-backup:sync',
-                name: 'Sync & Backup: Synchronize Settings',
+                name: this.translate.instant('SYNC_BACKUP.HOTKEYS.SYNC'),
             },
             {
                 id: 'sync-and-backup:create-backup',
-                name: 'Sync & Backup: Create Local Backup',
+                name: this.translate.instant('SYNC_BACKUP.HOTKEYS.CREATE_BACKUP'),
             },
         ]
     }
@@ -92,7 +98,7 @@ export class SyncAndBackupHotkeyProvider extends HotkeyProvider {
         if (id === 'sync-and-backup:create-backup') {
             console.log('[tabby-sync-and-backup] Backup hotkey triggered')
             this.backupService.createLocalBackup('Manual').then(() => {
-                this.notifications.notice('Sync & Backup: Manual backup created!')
+                this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.MANUAL_BACKUP_SUCCESS'))
             }).catch(e => {
                 this.notifications.error(`Backup failed: ${e?.message || e}`)
             })
@@ -176,7 +182,11 @@ export class SyncAndBackupConfigProvider extends ConfigProvider {
     ],
 })
 export default class SyncAndBackupModule {
-    constructor(private syncEngine: SyncEngineService) {
+    constructor(
+        private syncEngine: SyncEngineService,
+        private translate: TranslateService,
+    ) {
+        registerTranslations(this.translate)
         console.log('[tabby-sync-and-backup] Plugin initialized successfully in Tabby!')
         this.syncEngine.init()
     }

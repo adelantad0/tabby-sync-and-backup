@@ -1,6 +1,6 @@
 {
   "name": "tabby-sync-and-backup",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Two-in-one synchronization and automated backup solution for Tabby Terminal settings, profiles, and vaults.",
   "author": "adelantad0",
   "main": "dist/index.js",

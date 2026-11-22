@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-22
+
+### Changed
+- **Changelog UI**:
+  - Added a bounded scrollable container with customized dark-themed scrollbars for the Changelog block in the About tab (`max-height: 400px`), preventing excessive page height.
+
 ## [0.3.3] - 2026-11-22
 
 ### Changed
