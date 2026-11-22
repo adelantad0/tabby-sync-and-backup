@@ -1,11 +1,12 @@
 import { Component, HostBinding, OnInit } from '@angular/core'
-import { ConfigService, HostAppService, NotificationsService, PlatformService } from 'tabby-core'
+import { ConfigService, HostAppService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
 import { BackupService, BackupSnapshotItem } from '../services/backup.service'
 import { CryptoService, EncryptionStatus } from '../services/crypto.service'
 import { SyncService, ConnectionTestResult, SyncTargetConfig } from '../services/sync.service'
 import { DeviceIdentityService } from '../services/device-identity.service'
 import { SyncEngineService } from '../services/sync-engine.service'
 import { SyncClusterMember } from '../models/sync.model'
+import { registerTranslations } from '../i18n'
 import packageJson from '../../package.json'
 import changelogRaw from '../../CHANGELOG.md'
 
@@ -39,9 +40,9 @@ interface UpdateInfo {
     template: `
         <div class="d-flex align-items-center justify-content-between mb-3">
             <div>
-                <h3 class="m-0">{{ 'SYNC_BACKUP.TITLE' | translate }}</h3>
+                <h3 class="m-0">{{ t('SYNC_BACKUP.TAB_TITLE') }}</h3>
                 <div class="text-muted small">
-                    Synchronize your configuration across devices and manage local automated backups
+                    {{ t('SYNC_BACKUP.SUBTITLE') }}
                 </div>
             </div>
             <div class="d-flex align-items-center gap-2">
@@ -56,10 +57,10 @@ interface UpdateInfo {
             [style.border]="isDirty ? '1px solid rgba(255, 193, 7, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)'"
         >
             <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-warning text-dark" [class.d-none]="!isDirty">⚠️ Unsaved Changes</span>
-                <span class="badge bg-secondary" [class.d-none]="isDirty">✓ All changes saved</span>
+                <span class="badge bg-warning text-dark" [class.d-none]="!isDirty">{{ t('SYNC_BACKUP.SAVE_BAR.DIRTY') }}</span>
+                <span class="badge bg-secondary" [class.d-none]="isDirty">{{ t('SYNC_BACKUP.SAVE_BAR.CLEAN') }}</span>
                 <span class="text-muted small">
-                    {{ isDirty ? 'You have unsaved changes. Click Save to persist them.' : 'Settings are saved on disk.' }}
+                    {{ isDirty ? t('SYNC_BACKUP.SAVE_BAR.DIRTY_DESC') : t('SYNC_BACKUP.SAVE_BAR.CLEAN_DESC') }}
                 </span>
             </div>
             <div class="d-flex gap-2">
@@ -69,7 +70,7 @@ interface UpdateInfo {
                     [disabled]="!isDirty"
                     (click)="discardChanges()"
                 >
-                    Discard
+                    {{ t('SYNC_BACKUP.SAVE_BAR.DISCARD') }}
                 </button>
                 <button
                     type="button"
@@ -79,7 +80,7 @@ interface UpdateInfo {
                     [disabled]="!isDirty"
                     (click)="saveSettings()"
                 >
-                    💾 Save Settings
+                    {{ t('SYNC_BACKUP.SAVE_BAR.SAVE') }}
                 </button>
             </div>
         </div>
@@ -93,7 +94,7 @@ interface UpdateInfo {
                     [class.active]="activeTab === 'sync'"
                     (click)="setTab('sync')"
                 >
-                    🔄 Sync
+                    {{ t('SYNC_BACKUP.TABS.SYNC') }}
                 </button>
             </li>
             <li class="nav-item">
@@ -103,7 +104,7 @@ interface UpdateInfo {
                     [class.active]="activeTab === 'backups'"
                     (click)="setTab('backups')"
                 >
-                    🛡️ Backups
+                    {{ t('SYNC_BACKUP.TABS.BACKUPS') }}
                 </button>
             </li>
             <li class="nav-item">
@@ -113,7 +114,7 @@ interface UpdateInfo {
                     [class.active]="activeTab === 'security'"
                     (click)="setTab('security')"
                 >
-                    🔐 Security
+                    {{ t('SYNC_BACKUP.TABS.SECURITY') }}
                 </button>
             </li>
             <li class="nav-item">
@@ -123,7 +124,7 @@ interface UpdateInfo {
                     [class.active]="activeTab === 'about'"
                     (click)="setTab('about')"
                 >
-                    ℹ️ About
+                    {{ t('SYNC_BACKUP.TABS.ABOUT') }}
                 </button>
             </li>
         </ul>
@@ -140,8 +141,8 @@ interface UpdateInfo {
                             [disabled]="syncEngine.isSyncing || !isSyncConfigured()"
                             (click)="triggerSyncNow()"
                         >
-                            <span [class.d-none]="syncEngine.isSyncing">🔄 Synchronize Now</span>
-                            <span [class.d-none]="!syncEngine.isSyncing">⏳ Synchronizing...</span>
+                            <span [class.d-none]="syncEngine.isSyncing">{{ t('SYNC_BACKUP.SYNC.NOW') }}</span>
+                            <span [class.d-none]="!syncEngine.isSyncing">{{ t('SYNC_BACKUP.SYNC.SYNCING') }}</span>
                         </button>
                         <div>
                             <div class="d-flex align-items-center gap-2">
@@ -153,22 +154,22 @@ interface UpdateInfo {
                                     [class.bg-danger]="syncEngine.lastSyncStatus === 'error'"
                                     [class.bg-secondary]="syncEngine.lastSyncStatus === 'idle'"
                                 >
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'success'">✓ Synchronized</span>
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'syncing'">⏳ Sync In Progress</span>
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_required'">🔐 Password Required</span>
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_mismatch'">⚠️ Password Mismatch</span>
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'error'">✗ Sync Error</span>
-                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'idle'">⚪ Ready to Sync</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'success'">{{ t('SYNC_BACKUP.SYNC.STATUS_SYNCED') }}</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'syncing'">{{ t('SYNC_BACKUP.SYNC.STATUS_IN_PROGRESS') }}</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_required'">{{ t('SYNC_BACKUP.SYNC.STATUS_PASSWORD_REQUIRED') }}</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'password_mismatch'">{{ t('SYNC_BACKUP.SYNC.STATUS_PASSWORD_MISMATCH') }}</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'error'">{{ t('SYNC_BACKUP.SYNC.STATUS_ERROR') }}</span>
+                                    <span [class.d-none]="syncEngine.lastSyncStatus !== 'idle'">{{ t('SYNC_BACKUP.SYNC.STATUS_READY') }}</span>
                                 </span>
                                 <span class="small text-muted" *ngIf="syncEngine.lastSyncTime">
-                                    Last synced: {{ formatClusterDate(syncEngine.lastSyncTime.toISOString()) }}
+                                    {{ t('SYNC_BACKUP.SYNC.LAST_SYNCED') }} {{ formatClusterDate(syncEngine.lastSyncTime.toISOString()) }}
                                 </span>
                             </div>
                             <div class="small text-danger mt-1" *ngIf="syncEngine.lastSyncError">
                                 {{ syncEngine.lastSyncError }}
                             </div>
                             <div class="small text-muted mt-1" *ngIf="!syncEngine.lastSyncError && !isSyncConfigured()">
-                                Configure storage target below to enable synchronization.
+                                {{ t('SYNC_BACKUP.SYNC.CONFIGURE_HINT') }}
                             </div>
                         </div>
                     </div>
@@ -184,21 +185,21 @@ interface UpdateInfo {
                 *ngIf="syncEngine.lastSyncStatus === 'password_required' || syncEngine.lastSyncStatus === 'password_mismatch'"
             >
                 <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
-                    <span>🔐 Master Password Required for Cloud Synchronization</span>
-                    <span class="badge bg-dark">Key Epoch #{{ syncEngine.passwordErrorEpoch || 1 }}</span>
+                    <span>🔐 {{ t('SYNC_BACKUP.SYNC.PASSWORD_BANNER_TITLE') }}</span>
+                    <span class="badge bg-dark">{{ t('SYNC_BACKUP.SYNC.KEY_EPOCH') }} #{{ syncEngine.passwordErrorEpoch || 1 }}</span>
                 </div>
                 <div class="card-body">
                     <p class="small text-muted mb-2">
                         {{ syncEngine.lastSyncStatus === 'password_mismatch'
-                            ? 'The master password was updated on device "' + (syncEngine.passwordErrorDevice || 'peer') + '" (Key Epoch #' + (syncEngine.passwordErrorEpoch || 1) + '). Enter the updated master password to unlock and resume synchronization.'
-                            : 'Sync state from "' + (syncEngine.passwordErrorDevice || 'peer') + '" is encrypted. Enter your master password to unlock and download profiles.'
+                            ? t('SYNC_BACKUP.SYNC.PASSWORD_MISMATCH_DESC', { device: syncEngine.passwordErrorDevice || 'peer', epoch: syncEngine.passwordErrorEpoch || 1 })
+                            : t('SYNC_BACKUP.SYNC.PASSWORD_REQUIRED_DESC', { device: syncEngine.passwordErrorDevice || 'peer' })
                         }}
                     </p>
                     <div class="input-group">
                         <input
                             [type]="showSyncUnlockPassword ? 'text' : 'password'"
                             class="form-control"
-                            placeholder="Enter master password..."
+                            [placeholder]="t('SYNC_BACKUP.SYNC.PASSWORD_PLACEHOLDER')"
                             [(ngModel)]="syncUnlockPasswordInput"
                             (keyup.enter)="applySyncUnlockPassword()"
                         />
@@ -215,7 +216,7 @@ interface UpdateInfo {
                             [disabled]="!syncUnlockPasswordInput"
                             (click)="applySyncUnlockPassword()"
                         >
-                            🔓 Unlock &amp; Synchronize
+                            {{ t('SYNC_BACKUP.SYNC.UNLOCK_SYNC') }}
                         </button>
                     </div>
                 </div>
@@ -224,26 +225,26 @@ interface UpdateInfo {
             <!-- 2. This Device Identity Card -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">💻 This Device Identity</span>
+                    <span class="fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_IDENTITY_TITLE') }}</span>
                     <span class="badge bg-dark border">{{ getPlatformLabel(thisPlatform) }}</span>
                 </div>
                 <div class="card-body">
                     <div class="row g-3 align-items-center">
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold">Device Name</label>
+                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_NAME') }}</label>
                             <input
                                 type="text"
                                 class="form-control"
-                                placeholder="e.g. MacBook Pro, Workstation PC"
+                                [placeholder]="t('SYNC_BACKUP.SYNC.DEVICE_NAME_PLACEHOLDER')"
                                 [(ngModel)]="formData.deviceName"
                                 (ngModelChange)="onDeviceNameChange($event)"
                             />
                             <div class="form-text">
-                                Renaming this device updates its label on peer computers without creating duplicate files or re-uploading data.
+                                {{ t('SYNC_BACKUP.SYNC.DEVICE_NAME_HINT') }}
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small fw-bold">Unique Device ID (UUID)</label>
+                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_ID') }}</label>
                             <div class="input-group">
                                 <input
                                     type="text"
@@ -252,11 +253,11 @@ interface UpdateInfo {
                                     [value]="thisDeviceId"
                                 />
                                 <button type="button" class="btn btn-outline-secondary btn-sm" (click)="copyDeviceId()">
-                                    📋 Copy
+                                    {{ t('SYNC_BACKUP.SYNC.COPY') }}
                                 </button>
                             </div>
                             <div class="form-text">
-                                Permanent identifier for this device's state file (<code>devices/{{ thisDeviceId.substring(0, 8) }}...json</code>).
+                                {{ t('SYNC_BACKUP.SYNC.DEVICE_ID_HINT') }} (<code>devices/{{ thisDeviceId.substring(0, 8) }}...json</code>).
                             </div>
                         </div>
                     </div>
@@ -266,7 +267,7 @@ interface UpdateInfo {
             <!-- 3. Storage Provider Configuration -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Storage Provider Configuration</span>
+                    <span class="fw-bold">{{ t('SYNC_BACKUP.SYNC.STORAGE_TITLE') }}</span>
                     <div class="d-flex align-items-center gap-2">
                         <span
                             class="badge"
@@ -276,63 +277,63 @@ interface UpdateInfo {
                             [class.bg-success]="connectionStatus === 'connected'"
                             [class.bg-danger]="connectionStatus === 'error'"
                         >
-                            <span [class.d-none]="connectionStatus !== 'untested'">⚪ Not Tested</span>
-                            <span [class.d-none]="connectionStatus !== 'testing'">⏳ Testing...</span>
-                            <span [class.d-none]="connectionStatus !== 'connected'">✓ Connected</span>
-                            <span [class.d-none]="connectionStatus !== 'error'">✗ Disconnected</span>
+                            <span [class.d-none]="connectionStatus !== 'untested'">{{ t('SYNC_BACKUP.SYNC.STATUS_UNTESTED') }}</span>
+                            <span [class.d-none]="connectionStatus !== 'testing'">{{ t('SYNC_BACKUP.SYNC.STATUS_TESTING') }}</span>
+                            <span [class.d-none]="connectionStatus !== 'connected'">{{ t('SYNC_BACKUP.SYNC.STATUS_CONNECTED') }}</span>
+                            <span [class.d-none]="connectionStatus !== 'error'">{{ t('SYNC_BACKUP.SYNC.STATUS_DISCONNECTED') }}</span>
                         </span>
                         <span class="badge bg-secondary">{{ getProviderTitle() }}</span>
                     </div>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label">Provider Type</label>
+                        <label class="form-label">{{ t('SYNC_BACKUP.SYNC.PROVIDER_TYPE') }}</label>
                         <select
                             class="form-select"
                             [(ngModel)]="formData.syncProvider"
                             (ngModelChange)="onProviderChange($event)"
                         >
-                            <option value="webdav">WebDAV (Nextcloud, ownCloud, custom server)</option>
-                            <option value="local">Local Directory / Shared Folder (Syncthing, Dropbox, iCloud)</option>
+                            <option value="webdav">{{ t('SYNC_BACKUP.SYNC.PROVIDER_WEBDAV') }}</option>
+                            <option value="local">{{ t('SYNC_BACKUP.SYNC.PROVIDER_LOCAL') }}</option>
                         </select>
                         <div class="form-text">
-                            Select the target storage provider where your configuration payload will be synchronized.
+                            {{ t('SYNC_BACKUP.SYNC.PROVIDER_HINT') }}
                         </div>
                     </div>
 
                     <!-- WebDAV Settings -->
                     <div [class.d-none]="formData.syncProvider !== 'webdav'">
                         <div class="mb-3">
-                            <label class="form-label">WebDAV Server URL</label>
+                            <label class="form-label">{{ t('SYNC_BACKUP.SYNC.WEBDAV_URL') }}</label>
                             <input
                                 type="text"
                                 class="form-control"
-                                placeholder="https://nextcloud.example.com/remote.php/dav/files/user/"
+                                [placeholder]="t('SYNC_BACKUP.SYNC.WEBDAV_URL_PLACEHOLDER')"
                                 [value]="formData.webdavUrl"
                                 (input)="onStorageParamChange('webdavUrl', $any($event.target).value)"
                             />
                             <div class="form-text">
-                                Full WebDAV root URL including protocol and path.
+                                {{ t('SYNC_BACKUP.SYNC.WEBDAV_URL_HINT') }}
                             </div>
                         </div>
                         <div class="row g-2 mb-3">
                             <div class="col-md-6">
-                                <label class="form-label">Username</label>
+                                <label class="form-label">{{ t('SYNC_BACKUP.SYNC.WEBDAV_USERNAME') }}</label>
                                 <input
                                     type="text"
                                     class="form-control"
-                                    placeholder="Username or email"
+                                    [placeholder]="t('SYNC_BACKUP.SYNC.WEBDAV_USERNAME_PLACEHOLDER')"
                                     [value]="formData.webdavUsername"
                                     (input)="onStorageParamChange('webdavUsername', $any($event.target).value)"
                                 />
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Password / App Password</label>
+                                <label class="form-label">{{ t('SYNC_BACKUP.SYNC.WEBDAV_PASSWORD') }}</label>
                                 <div class="input-group">
                                     <input
                                         [type]="showWebdavPassword ? 'text' : 'password'"
                                         class="form-control"
-                                        placeholder="Password or App Token"
+                                        [placeholder]="t('SYNC_BACKUP.SYNC.WEBDAV_PASSWORD_PLACEHOLDER')"
                                         [value]="formData.webdavPassword"
                                         (input)="onStorageParamChange('webdavPassword', $any($event.target).value)"
                                     />
@@ -351,12 +352,12 @@ interface UpdateInfo {
                     <!-- Local Sync Directory Settings -->
                     <div [class.d-none]="formData.syncProvider !== 'local'">
                         <div class="mb-3">
-                            <label class="form-label">Local Destination Path</label>
+                            <label class="form-label">{{ t('SYNC_BACKUP.SYNC.LOCAL_PATH') }}</label>
                             <div class="input-group">
                                 <input
                                     type="text"
                                     class="form-control"
-                                    placeholder="/Users/name/Sync/Tabby/"
+                                    [placeholder]="t('SYNC_BACKUP.SYNC.LOCAL_PATH_PLACEHOLDER')"
                                     [value]="formData.localSyncPath"
                                     (input)="onStorageParamChange('localSyncPath', $any($event.target).value)"
                                 />
@@ -365,11 +366,11 @@ interface UpdateInfo {
                                     class="btn btn-outline-secondary"
                                     (click)="browseLocalSyncFolder()"
                                 >
-                                    📂 Browse...
+                                    📂 {{ t('SYNC_BACKUP.SYNC.SELECT_FOLDER') }}
                                 </button>
                             </div>
                             <div class="form-text">
-                                Specify a folder synced by Syncthing, Dropbox, iCloud, or a mounted network drive.
+                                {{ t('SYNC_BACKUP.SYNC.PROVIDER_HINT') }}
                             </div>
                         </div>
                     </div>
@@ -383,8 +384,8 @@ interface UpdateInfo {
                                 [disabled]="isTestingConnection"
                                 (click)="testStorageConnection()"
                             >
-                                <span [class.d-none]="isTestingConnection">🔍 Test Connection</span>
-                                <span [class.d-none]="!isTestingConnection">⏳ Testing Connection...</span>
+                                <span [class.d-none]="isTestingConnection">{{ t('SYNC_BACKUP.SYNC.TEST_CONNECTION') }}</span>
+                                <span [class.d-none]="!isTestingConnection">{{ t('SYNC_BACKUP.SYNC.STATUS_TESTING') }}</span>
                             </button>
                             <span class="small text-muted" *ngIf="connectionTestResult?.latencyMs">
                                 Response time: <strong>{{ connectionTestResult?.latencyMs }} ms</strong>
@@ -414,7 +415,7 @@ interface UpdateInfo {
             <!-- 4. Selective Synchronization Card -->
             <div class="card mb-3">
                 <div class="card-header">
-                    <span class="fw-bold">🎛️ Selective Synchronization Scope</span>
+                    <span class="fw-bold">🎛️ {{ t('SYNC_BACKUP.SYNC.SELECTIVE_TITLE') }}</span>
                 </div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-2">
@@ -426,10 +427,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('syncProfiles', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="syncProfilesCheck">
-                            Synchronize Profiles &amp; Folders
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_PROFILES') }}
                         </label>
                         <div class="text-muted small">
-                            SSH, Telnet, Serial connections, and profile groups.
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_PROFILES_HINT') }}
                         </div>
                     </div>
 
@@ -442,10 +443,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('syncVault', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="syncVaultCheck">
-                            Synchronize Vault Secrets
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_VAULT') }}
                         </label>
                         <div class="text-muted small">
-                            Encrypted passwords and private keys. Requires identical Master Password on all synchronized machines.
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_VAULT_HINT') }}
                         </div>
                     </div>
 
@@ -458,10 +459,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('syncColorSchemes', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="syncColorSchemesCheck">
-                            Synchronize Color Schemes
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_COLOR_SCHEMES') }}
                         </label>
                         <div class="text-muted small">
-                            Custom terminal color palettes.
+                            {{ t('SYNC_BACKUP.SYNC.SYNC_COLOR_SCHEMES_HINT') }}
                         </div>
                     </div>
 
@@ -477,7 +478,7 @@ interface UpdateInfo {
             <!-- 5. Synchronization Automation & Schedule Card -->
             <div class="card mb-3">
                 <div class="card-header">
-                    <span class="fw-bold">⚙️ Synchronization Automation &amp; Triggers</span>
+                    <span class="fw-bold">⚙️ {{ t('SYNC_BACKUP.SYNC.AUTOMATION_TITLE') }}</span>
                 </div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
@@ -489,7 +490,7 @@ interface UpdateInfo {
                             (change)="onFieldChange('syncEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableAutoSyncCheck">
-                            Enable automatic background synchronization
+                            {{ t('SYNC_BACKUP.SYNC.TRIGGER_PERIODIC') }}
                         </label>
                         <div class="text-muted small">
                             Automatically coordinates settings across machines using the triggers configured below.
@@ -506,10 +507,10 @@ interface UpdateInfo {
                                 (change)="onFieldChange('syncOnStartup', $any($event.target).checked)"
                             />
                             <label class="form-check-label" for="syncOnStartupCheck">
-                                Synchronize on Tabby startup
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_STARTUP') }}
                             </label>
                             <div class="text-muted small">
-                                Initiates 4 seconds after launch so terminal startup remains instant.
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_STARTUP_HINT') }}
                             </div>
                         </div>
 
@@ -522,10 +523,10 @@ interface UpdateInfo {
                                 (change)="onFieldChange('syncOnFocus', $any($event.target).checked)"
                             />
                             <label class="form-check-label" for="syncOnFocusCheck">
-                                Synchronize when Tabby window regains focus
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_FOCUS') }}
                             </label>
                             <div class="text-muted small">
-                                Automatically pulls changes made on another machine when you return to this computer (debounced by 30 seconds).
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_FOCUS_HINT') }}
                             </div>
                         </div>
 
@@ -538,12 +539,12 @@ interface UpdateInfo {
                                 (change)="onFieldChange('periodicSync', $any($event.target).checked)"
                             />
                             <label class="form-check-label" for="periodicSyncCheck">
-                                Periodic background interval
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_PERIODIC') }}
                             </label>
                         </div>
 
                         <div class="mb-2 ps-4" [class.d-none]="!formData.periodicSync">
-                            <label class="form-label small">Interval</label>
+                            <label class="form-label small">{{ t('SYNC_BACKUP.SYNC.SYNC_INTERVAL') }}</label>
                             <select
                                 class="form-select form-select-sm"
                                 [(ngModel)]="formData.syncIntervalMinutes"
@@ -563,7 +564,7 @@ interface UpdateInfo {
             <!-- 6. Connected Cluster Devices Card -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">🌐 Connected Cluster Devices</span>
+                    <span class="fw-bold">🌐 {{ t('SYNC_BACKUP.SYNC.CLUSTER_TITLE') }}</span>
                     <button
                         type="button"
                         class="btn btn-outline-secondary btn-sm"
@@ -576,24 +577,24 @@ interface UpdateInfo {
                 </div>
                 <div class="card-body">
                     <div class="text-muted small text-center py-3" *ngIf="clusterMembers.length === 0 && !isLoadingCluster">
-                        No peer devices found yet in cluster registry. Click <strong>Synchronize Now</strong> to register this device.
+                        No peer devices found yet in cluster registry. Click <strong>{{ t('SYNC_BACKUP.SYNC.NOW') }}</strong> to register this device.
                     </div>
                     <div class="table-responsive" *ngIf="clusterMembers.length > 0">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th>Device Name</th>
-                                    <th>Platform</th>
+                                    <th>{{ t('SYNC_BACKUP.SYNC.COL_DEVICE_NAME') }}</th>
+                                    <th>{{ t('SYNC_BACKUP.SYNC.COL_PLATFORM') }}</th>
                                     <th>Security</th>
-                                    <th>Last Seen</th>
-                                    <th>Device ID</th>
+                                    <th>{{ t('SYNC_BACKUP.SYNC.COL_LAST_SEEN') }}</th>
+                                    <th>{{ t('SYNC_BACKUP.SYNC.COL_DEVICE_ID') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <tr *ngFor="let member of clusterMembers">
                                     <td>
                                         <strong>{{ member.deviceName || 'Unknown Device' }}</strong>
-                                        <span class="badge bg-primary ms-1" *ngIf="member.deviceId === thisDeviceId">This Device</span>
+                                        <span class="badge bg-primary ms-1" *ngIf="member.deviceId === thisDeviceId">{{ t('SYNC_BACKUP.SYNC.THIS_DEVICE_BADGE') }}</span>
                                     </td>
                                     <td>
                                         <span class="badge bg-secondary">{{ getPlatformLabel(member.platform) }}</span>
@@ -623,18 +624,18 @@ interface UpdateInfo {
             <!-- Optional Inline Prompt for Historic Backup Password -->
             <div class="card border-warning mb-3" [class.d-none]="!promptRestoreSnapshot">
                 <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
-                    <span>🔑 Password Required: {{ promptRestoreSnapshot?.filename }}</span>
+                    <span>🔑 {{ t('SYNC_BACKUP.BACKUPS.MODAL_PASSWORD_TITLE') }}: {{ promptRestoreSnapshot?.filename }}</span>
                     <button type="button" class="btn-close" (click)="cancelPromptRestore()"></button>
                 </div>
                 <div class="card-body">
                     <p class="small text-muted mb-2">
-                        This snapshot was encrypted with a different or previous master password. Enter the password used when this snapshot was created to decrypt and restore it.
+                        {{ t('SYNC_BACKUP.BACKUPS.MODAL_PASSWORD_DESC') }}
                     </p>
                     <div class="input-group">
                         <input
                             [type]="showPromptPassword ? 'text' : 'password'"
                             class="form-control"
-                            placeholder="Enter snapshot master password..."
+                            [placeholder]="t('SYNC_BACKUP.SYNC.PASSWORD_PLACEHOLDER')"
                             [value]="promptPasswordInput"
                             (input)="promptPasswordInput = $any($event.target).value"
                             (keyup.enter)="confirmRestoreWithPassword()"
@@ -652,7 +653,7 @@ interface UpdateInfo {
                             [disabled]="!promptPasswordInput"
                             (click)="confirmRestoreWithPassword()"
                         >
-                            Decrypt &amp; Restore
+                            {{ t('SYNC_BACKUP.BACKUPS.MODAL_SUBMIT') }}
                         </button>
                     </div>
                 </div>
@@ -660,7 +661,7 @@ interface UpdateInfo {
 
             <!-- Backup Policies Card -->
             <div class="card mb-3">
-                <div class="card-header fw-bold">Automated Snapshot Policies &amp; Retention</div>
+                <div class="card-header fw-bold">{{ t('SYNC_BACKUP.BACKUPS.OPTIONS_TITLE') }}</div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input
@@ -671,10 +672,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('backupEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label" for="enablePreSyncBackup">
-                            Create backup snapshot before every synchronization
+                            {{ t('SYNC_BACKUP.BACKUPS.ENABLE_BACKUPS') }}
                         </label>
                         <div class="text-muted small">
-                            Protects against accidental config overwrites or remote conflict corruption.
+                            {{ t('SYNC_BACKUP.BACKUPS.ENABLE_BACKUPS_HINT') }}
                         </div>
                     </div>
 
@@ -687,12 +688,12 @@ interface UpdateInfo {
                             (change)="onFieldChange('backupOnStartup', $any($event.target).checked)"
                         />
                         <label class="form-check-label" for="enableStartupBackup">
-                            Create daily backup snapshot on Tabby startup
+                            {{ t('SYNC_BACKUP.BACKUPS.BACKUP_ON_STARTUP') }}
                         </label>
                     </div>
 
                     <div class="mb-2">
-                        <label class="form-label">Retention Policy (Max snapshots to keep per location)</label>
+                        <label class="form-label">{{ t('SYNC_BACKUP.BACKUPS.MAX_BACKUPS') }}</label>
                         <select
                             class="form-select"
                             [(ngModel)]="formData.maxBackupsToKeep"
@@ -720,7 +721,7 @@ interface UpdateInfo {
                         [class.btn-outline-primary]="backupView !== 'local'"
                         (click)="setBackupView('local')"
                     >
-                        💻 Local Backups (In Tabby Dir)
+                        {{ t('SYNC_BACKUP.BACKUPS.VIEW_LOCAL') }}
                         <span class="badge bg-light text-dark ms-1">{{ localBackups.length }}</span>
                     </button>
                     <button
@@ -732,7 +733,7 @@ interface UpdateInfo {
                     >
                         <span [class.d-none]="isSyncConfigured()">🔒</span>
                         <span [class.d-none]="!isSyncConfigured()">☁️</span>
-                        Remote Backups (/backups)
+                        {{ t('SYNC_BACKUP.BACKUPS.VIEW_REMOTE') }}
                         <span class="badge bg-light text-dark ms-1" [class.d-none]="!isSyncConfigured()">
                             {{ remoteBackups.length }}
                         </span>
@@ -746,14 +747,14 @@ interface UpdateInfo {
                         class="btn btn-sm btn-outline-secondary"
                         (click)="openSnapshotsFolder()"
                     >
-                        📁 Open Folder
+                        📁 {{ t('SYNC_BACKUP.BACKUPS.OPEN_FOLDER') }}
                     </button>
                     <button
                         type="button"
                         class="btn btn-sm btn-success"
                         (click)="createLocalBackupNow()"
                     >
-                        ➕ Create Local Backup
+                        ➕ {{ t('SYNC_BACKUP.BACKUPS.CREATE_BACKUP') }}
                     </button>
                 </div>
 
@@ -773,7 +774,7 @@ interface UpdateInfo {
                         [disabled]="isLoadingBackups"
                         (click)="createRemoteBackupNow()"
                     >
-                        ☁️ Create Remote Backup
+                        ☁️ {{ t('SYNC_BACKUP.BACKUPS.CREATE_BACKUP') }}
                     </button>
                 </div>
             </div>
@@ -782,22 +783,22 @@ interface UpdateInfo {
             <div [class.d-none]="backupView !== 'local'">
                 <div class="card mb-3">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <span class="fw-bold">Local Snapshots (Stored in Tabby directory)</span>
+                        <span class="fw-bold">{{ t('SYNC_BACKUP.BACKUPS.VIEW_LOCAL') }}</span>
                         <span class="text-muted small">Max retention: {{ formData.maxBackupsToKeep }}</span>
                     </div>
                     <div class="card-body p-0">
                         <div class="p-4 text-center text-muted" [class.d-none]="localBackups.length > 0">
-                            No local backups found. Click <strong>«➕ Create Local Backup»</strong> above to create your first snapshot.
+                            {{ t('SYNC_BACKUP.BACKUPS.NO_BACKUPS') }}
                         </div>
                         <div class="table-responsive" [class.d-none]="localBackups.length === 0">
                             <table class="table table-hover m-0 align-middle">
                                 <thead>
                                     <tr>
-                                        <th style="width: 170px;">Date &amp; Time</th>
-                                        <th style="width: 110px;">Trigger</th>
-                                        <th style="width: 150px;">Security</th>
-                                        <th style="width: 80px;">Size</th>
-                                        <th class="text-end" style="width: 220px;">Actions</th>
+                                        <th style="width: 170px;">{{ t('SYNC_BACKUP.BACKUPS.TABLE_DATE') }}</th>
+                                        <th style="width: 110px;">{{ t('SYNC_BACKUP.BACKUPS.TABLE_TYPE') }}</th>
+                                        <th style="width: 150px;">{{ t('SYNC_BACKUP.BACKUPS.TABLE_SECURITY') }}</th>
+                                        <th style="width: 80px;">{{ t('SYNC_BACKUP.BACKUPS.TABLE_SIZE') }}</th>
+                                        <th class="text-end" style="width: 220px;">{{ t('SYNC_BACKUP.BACKUPS.TABLE_ACTIONS') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -836,7 +837,7 @@ interface UpdateInfo {
                                                     title="Restore configuration snapshot"
                                                     (click)="restoreLocalBackup(item)"
                                                 >
-                                                    ↩️ Restore
+                                                    ↩️ {{ t('SYNC_BACKUP.BACKUPS.RESTORE') }}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -845,7 +846,7 @@ interface UpdateInfo {
                                                     [title]="isSyncConfigured() ? 'Upload to remote /backups/' : 'Configure Sync first to upload'"
                                                     (click)="uploadLocalToRemote(item)"
                                                 >
-                                                    ☁️ Upload
+                                                    ☁️ {{ t('SYNC_BACKUP.BACKUPS.UPLOAD_REMOTE') }}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -853,7 +854,7 @@ interface UpdateInfo {
                                                     title="Delete local snapshot"
                                                     (click)="deleteLocalBackup(item)"
                                                 >
-                                                    🗑️ Delete
+                                                    🗑️ {{ t('SYNC_BACKUP.BACKUPS.DELETE') }}
                                                 </button>
                                             </div>
                                         </td>
@@ -972,7 +973,7 @@ interface UpdateInfo {
         <!-- ==================== TAB 3: SECURITY ==================== -->
         <div [class.d-none]="activeTab !== 'security'">
             <div class="card mb-3">
-                <div class="card-header fw-bold">Payload &amp; Backup Encryption (AES-256-GCM)</div>
+                <div class="card-header fw-bold">{{ t('SYNC_BACKUP.SECURITY.CARD_TITLE') }}</div>
                 <div class="card-body">
                     <div class="form-check form-switch mb-3">
                         <input
@@ -983,10 +984,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('encryptionEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableEncryptionCheck">
-                            Encrypt backups and sync payload with master password
+                            {{ t('SYNC_BACKUP.SECURITY.ENABLE_ENCRYPTION') }}
                         </label>
                         <div class="text-muted small">
-                            Protects SSH passwords, tokens, and server IP addresses with authenticated client-side AES-256-GCM.
+                            {{ t('SYNC_BACKUP.SECURITY.ENABLE_ENCRYPTION_HINT') }}
                         </div>
                     </div>
 
@@ -998,7 +999,7 @@ interface UpdateInfo {
                                 <div>
                                     <div class="fw-bold">🔒 Master Password Configured</div>
                                     <div class="small text-muted">
-                                        New backups and remote sync payloads are encrypted with AES-256-GCM.
+                                        {{ t('SYNC_BACKUP.SECURITY.CARD_DESC') }}
                                     </div>
                                 </div>
                                 <button
@@ -1006,7 +1007,7 @@ interface UpdateInfo {
                                     class="btn btn-sm btn-outline-primary"
                                     (click)="isChangingPassword = !isChangingPassword"
                                 >
-                                    {{ isChangingPassword ? 'Cancel Change' : '🔑 Change Master Password' }}
+                                    {{ isChangingPassword ? 'Cancel Change' : ('🔑 ' + t('SYNC_BACKUP.SECURITY.UPDATE_PASSWORD')) }}
                                 </button>
                             </div>
                         </div>
@@ -1014,12 +1015,12 @@ interface UpdateInfo {
                         <!-- Case 2: Setting password for first time OR Changing existing password -->
                         <div [class.d-none]="hasSavedPassword && !isChangingPassword" class="p-3 border rounded mb-3 security-box">
                             <h6 class="fw-bold mb-3">
-                                {{ hasSavedPassword ? '🔑 Change Master Password' : '🔑 Set Initial Master Password' }}
+                                {{ hasSavedPassword ? ('🔑 ' + t('SYNC_BACKUP.SECURITY.UPDATE_PASSWORD')) : ('🔑 ' + t('SYNC_BACKUP.SECURITY.UPDATE_PASSWORD')) }}
                             </h6>
 
                             <!-- Old password verification when changing -->
                             <div class="mb-3" [class.d-none]="!hasSavedPassword">
-                                <label class="form-label">Current Master Password</label>
+                                <label class="form-label">{{ t('SYNC_BACKUP.SECURITY.CURRENT_PASSWORD') }}</label>
                                 <div class="input-group">
                                     <input
                                         [type]="showOldPassword ? 'text' : 'password'"
@@ -1040,7 +1041,7 @@ interface UpdateInfo {
 
                             <div class="row g-2 mb-3">
                                 <div class="col-md-6">
-                                    <label class="form-label">New Master Password</label>
+                                    <label class="form-label">{{ t('SYNC_BACKUP.SECURITY.NEW_PASSWORD') }}</label>
                                     <div class="input-group">
                                         <input
                                             [type]="showNewPassword ? 'text' : 'password'"
@@ -1059,7 +1060,7 @@ interface UpdateInfo {
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label">Confirm New Password</label>
+                                    <label class="form-label">{{ t('SYNC_BACKUP.SECURITY.CONFIRM_PASSWORD') }}</label>
                                     <div class="input-group">
                                         <input
                                             [type]="showConfirmPassword ? 'text' : 'password'"
@@ -1102,7 +1103,7 @@ interface UpdateInfo {
                                     (change)="reEncryptLocalBackups = $any($event.target).checked"
                                 />
                                 <label class="form-check-label small" for="reEncryptLocalCheck">
-                                    <strong>Update existing local backups</strong> to the new password automatically
+                                    <strong>{{ t('SYNC_BACKUP.SECURITY.RE_ENCRYPT_LOCAL') }}</strong>
                                 </label>
                                 <div class="text-muted small">
                                     Decrypts your local snapshots with the previous password and re-encrypts them with the new one.
@@ -1115,7 +1116,7 @@ interface UpdateInfo {
                                 [disabled]="!canApplyPassword()"
                                 (click)="applyPasswordUpdate()"
                             >
-                                {{ hasSavedPassword ? 'Apply New Password' : 'Set Master Password' }}
+                                {{ t('SYNC_BACKUP.SECURITY.UPDATE_PASSWORD') }}
                             </button>
                         </div>
                     </div>
@@ -1164,12 +1165,12 @@ interface UpdateInfo {
 
             <div class="card mb-3">
                 <div class="card-body text-center py-4">
-                    <h4 class="mb-1">Tabby Sync &amp; Backup</h4>
+                    <h4 class="mb-1">{{ t('SYNC_BACKUP.ABOUT.TITLE') }}</h4>
                     <div class="text-muted mb-3">
-                        Seamless cross-device configuration synchronization &amp; local snapshot backups.
+                        {{ t('SYNC_BACKUP.ABOUT.DESC') }}
                     </div>
                     <div class="d-flex justify-content-center gap-2 mb-4">
-                        <span class="badge bg-primary">Version {{ pluginVersion }}</span>
+                        <span class="badge bg-primary">{{ t('SYNC_BACKUP.ABOUT.VERSION') }} {{ pluginVersion }}</span>
                         <span class="badge bg-info text-dark">MIT License</span>
                         <span class="badge bg-secondary">Author: adelantad0</span>
                     </div>
@@ -1180,14 +1181,14 @@ interface UpdateInfo {
                             class="btn btn-outline-primary"
                             (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup')"
                         >
-                            ⭐ GitHub Repository
+                            ⭐ {{ t('SYNC_BACKUP.ABOUT.GITHUB_REPO') }}
                         </button>
                         <button
                             type="button"
                             class="btn btn-outline-secondary"
                             (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup/issues')"
                         >
-                            🐞 Report an Issue
+                            🐞 {{ t('SYNC_BACKUP.ABOUT.REPORT_ISSUE') }}
                         </button>
                         <button
                             type="button"
@@ -1195,7 +1196,7 @@ interface UpdateInfo {
                             [disabled]="isCheckingUpdates"
                             (click)="checkForUpdates()"
                         >
-                            <span [class.d-none]="isCheckingUpdates">🔄 Check for Updates</span>
+                            <span [class.d-none]="isCheckingUpdates">🔄 {{ t('SYNC_BACKUP.ABOUT.CHECK_UPDATES') }}</span>
                             <span [class.d-none]="!isCheckingUpdates">⏳ Checking...</span>
                         </button>
                     </div>
@@ -1206,7 +1207,7 @@ interface UpdateInfo {
                             class="btn btn-sm btn-link text-muted"
                             (click)="copyDiagnostics()"
                         >
-                            📋 Copy Diagnostics &amp; Environment Info
+                            {{ t('SYNC_BACKUP.ABOUT.COPY_DIAGNOSTICS') }}
                         </button>
                     </div>
                 </div>
@@ -1486,7 +1487,20 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         private syncService: SyncService,
         public deviceIdentity: DeviceIdentityService,
         public syncEngine: SyncEngineService,
-    ) {}
+        public translate: TranslateService,
+    ) {
+        registerTranslations(this.translate)
+    }
+
+    t(key: string, params?: Record<string, any>): string {
+        let str = this.translate.instant(key) || key
+        if (params) {
+            for (const [k, v] of Object.entries(params)) {
+                str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v))
+            }
+        }
+        return str
+    }
 
     async ngOnInit(): Promise<void> {
         this.resetForm()
@@ -1579,9 +1593,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             this.connectionStatus = result.success ? 'connected' : 'error'
 
             if (result.success) {
-                this.notifications.notice(`Connection test passed: ${result.message}`)
+                this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.CONNECTION_PASSED', { msg: result.message }))
             } else {
-                this.notifications.error(`Connection test failed: ${result.message}`)
+                this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.CONNECTION_FAILED', { msg: result.message }))
             }
         } catch (e: any) {
             this.connectionTestResult = {
@@ -1624,7 +1638,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     copyDeviceId(): void {
         if (typeof navigator !== 'undefined' && navigator.clipboard) {
             navigator.clipboard.writeText(this.thisDeviceId).then(() => {
-                this.notifications.info('Device ID copied to clipboard!')
+                this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.DEVICE_ID_COPIED'))
             }).catch(() => {
                 this.notifications.info(`Device ID: ${this.thisDeviceId}`)
             })
@@ -1720,13 +1734,13 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             }
         }
 
-        this.notifications.notice('Sync & Backup settings saved successfully!')
+        this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.SETTINGS_SAVED'))
         await this.loadLocalBackups()
     }
 
     discardChanges(): void {
         this.resetForm()
-        this.notifications.info('Unsaved changes discarded.')
+        this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.SETTINGS_DISCARDED'))
     }
 
     setTab(tab: SettingsSubTab): void {
@@ -1776,7 +1790,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
         // Verify old password if one was set
         if (this.hasSavedPassword && this.oldPasswordInput !== currentSavedPassword) {
-            this.notifications.error('Current master password verification failed!')
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.PASSWORD_VERIFY_FAILED'))
             return
         }
 
@@ -1787,9 +1801,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         if (this.reEncryptLocalBackups && this.hasSavedPassword && oldPass) {
             try {
                 const res = await this.backupService.reEncryptAllLocalBackups(oldPass, newPass)
-                this.notifications.notice(`Re-encrypted ${res.successCount} local backup(s) with new password!`)
+                this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.RE_ENCRYPT_SUCCESS', { count: res.successCount }))
             } catch (err: any) {
-                this.notifications.error(`Failed to re-encrypt some backups: ${err?.message || err}`)
+                this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.RE_ENCRYPT_FAILED', { err: err?.message || err }))
             }
         }
 
@@ -1804,7 +1818,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.oldPasswordInput = ''
         this.newPasswordInput = ''
         this.confirmPasswordInput = ''
-        this.notifications.notice(`Master encryption password updated successfully! (Key Epoch #${this.formData.keyEpoch})`)
+        this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.PASSWORD_UPDATED', { epoch: this.formData.keyEpoch }))
         await this.loadLocalBackups()
 
         // 3. Immediately re-encrypt and publish cloud sync state if configured
@@ -1878,24 +1892,24 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         try {
             const snapshot = await this.backupService.createLocalBackup('Manual')
             await this.loadLocalBackups()
-            this.notifications.notice(`Local snapshot created: ${snapshot.filename}`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.LOCAL_SNAPSHOT_CREATED', { filename: snapshot.filename }))
         } catch (e: any) {
-            this.notifications.error(`Failed to create local backup: ${e?.message || e}`)
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.LOCAL_SNAPSHOT_FAILED', { err: e?.message || e }))
         }
     }
 
     async createRemoteBackupNow(): Promise<void> {
         if (!this.isSyncConfigured()) {
-            this.notifications.error('Please configure your sync storage in the Sync tab first.')
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.REMOTE_CONFIGURE_FIRST'))
             return
         }
         this.isLoadingBackups = true
         try {
             const snapshot = await this.backupService.createRemoteBackup('Manual')
             await this.loadRemoteBackups()
-            this.notifications.notice(`Remote snapshot created: ${snapshot.filename}`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.REMOTE_SNAPSHOT_CREATED', { filename: snapshot.filename }))
         } catch (e: any) {
-            this.notifications.error(`Failed to create remote backup: ${e?.message || e}`)
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.REMOTE_SNAPSHOT_FAILED', { err: e?.message || e }))
         } finally {
             this.isLoadingBackups = false
         }
@@ -1920,7 +1934,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
             await this.backupService.restoreLocalBackup(item.filename)
             await this.loadLocalBackups()
-            this.notifications.notice(`Configuration successfully restored! Restarting Tabby...`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.RESTORE_SUCCESS'))
             setTimeout(() => {
                 this.hostApp.relaunch()
             }, 800)
@@ -1928,9 +1942,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             if (e?.message === 'PASSWORD_REQUIRED' || e?.message === 'INVALID_PASSWORD') {
                 this.promptRestoreSnapshot = item
                 this.promptPasswordInput = ''
-                this.notifications.info(`Please enter the master password for ${item.filename}`)
+                this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.ENTER_PASSWORD_FOR_SNAPSHOT', { filename: item.filename }))
             } else {
-                this.notifications.error(`Failed to restore local backup: ${e?.message || e}`)
+                this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.RESTORE_FAILED', { err: e?.message || e }))
             }
         }
     }
@@ -1946,7 +1960,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
             await this.backupService.restoreRemoteBackup(item)
             await this.loadLocalBackups()
-            this.notifications.notice(`Configuration successfully restored from remote snapshot! Restarting Tabby...`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.RESTORE_SUCCESS'))
             setTimeout(() => {
                 this.hostApp.relaunch()
             }, 800)
@@ -1954,9 +1968,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             if (e?.message === 'PASSWORD_REQUIRED' || e?.message === 'INVALID_PASSWORD') {
                 this.promptRestoreSnapshot = item
                 this.promptPasswordInput = ''
-                this.notifications.info(`Please enter the master password for ${item.filename}`)
+                this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.ENTER_PASSWORD_FOR_SNAPSHOT', { filename: item.filename }))
             } else {
-                this.notifications.error(`Failed to restore remote backup: ${e?.message || e}`)
+                this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.RESTORE_FAILED', { err: e?.message || e }))
             }
         } finally {
             this.isLoadingBackups = false
@@ -1978,7 +1992,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             } else {
                 await this.backupService.restoreRemoteBackup(item, pass)
             }
-            this.notifications.notice(`Configuration restored! Restarting Tabby...`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.RESTORE_SUCCESS'))
             this.promptRestoreSnapshot = null
             this.promptPasswordInput = ''
             await this.loadLocalBackups()
@@ -1986,7 +2000,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
                 this.hostApp.relaunch()
             }, 800)
         } catch (e: any) {
-            this.notifications.error('Decryption failed: Incorrect password.')
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.DECRYPTION_FAILED'))
         }
     }
 
@@ -1997,17 +2011,17 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     async uploadLocalToRemote(item: BackupSnapshotItem): Promise<void> {
         if (!this.isSyncConfigured()) {
-            this.notifications.error('Cannot upload: configure a valid WebDAV or Local Sync folder first.')
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.REMOTE_CONFIGURE_FIRST'))
             return
         }
         try {
             await this.backupService.uploadLocalSnapshotToRemote(item)
-            this.notifications.notice(`Uploaded ${item.filename} to remote /backups/!`)
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.UPLOAD_REMOTE_SUCCESS', { filename: item.filename }))
             if (this.backupView === 'remote') {
                 await this.loadRemoteBackups()
             }
         } catch (e: any) {
-            this.notifications.error(`Failed to upload snapshot to remote: ${e?.message || e}`)
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.REMOTE_SNAPSHOT_FAILED', { err: e?.message || e }))
         }
     }
 
@@ -2015,9 +2029,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         try {
             await this.backupService.deleteLocalBackup(item.filename)
             await this.loadLocalBackups()
-            this.notifications.info('Local snapshot deleted.')
+            this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.SNAPSHOT_DELETED_LOCAL'))
         } catch (e: any) {
-            this.notifications.error(`Failed to delete local backup: ${e?.message || e}`)
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.DELETE_FAILED', { err: e?.message || e }))
         }
     }
 
@@ -2025,9 +2039,9 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         try {
             await this.backupService.deleteRemoteBackup(item.filename)
             await this.loadRemoteBackups()
-            this.notifications.info('Remote snapshot deleted.')
+            this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.SNAPSHOT_DELETED_REMOTE'))
         } catch (e: any) {
-            this.notifications.error(`Failed to delete remote backup: ${e?.message || e}`)
+            this.notifications.error(this.t('SYNC_BACKUP.NOTIFICATIONS.DELETE_FAILED', { err: e?.message || e }))
         }
     }
 
@@ -2107,7 +2121,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             } else {
                 this.hasCheckedUpdates = true
                 this.notifications.notice(
-                    `You are running the latest version of Tabby Sync & Backup (v${this.pluginVersion})!`,
+                    this.t('SYNC_BACKUP.NOTIFICATIONS.LATEST_VERSION', { version: this.pluginVersion }),
                 )
             }
         } catch (err: any) {
@@ -2134,7 +2148,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
         try {
             await navigator.clipboard.writeText(diagnostics)
-            this.notifications.notice('Diagnostics info copied to clipboard!')
+            this.notifications.notice(this.t('SYNC_BACKUP.NOTIFICATIONS.DIAGNOSTICS_COPIED'))
         } catch {
             this.notifications.info('Diagnostics:\n' + diagnostics)
         }
@@ -2146,7 +2160,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             case 'webdav':
                 return 'WebDAV'
             case 'local':
-                return 'Local Directory'
+                return this.t('SYNC_BACKUP.SYNC.LOCAL_PATH')
             default:
                 return provider
         }

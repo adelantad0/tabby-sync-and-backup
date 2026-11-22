@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### Added
+- **Full Internationalization & Localization (i18n)**:
+  - Added native multi-language support covering English (`en-US`), Russian (`ru-RU`), and Simplified Chinese (`zh-CN`).
+  - Implemented modular dictionary infrastructure in `src/i18n/` (`en.ts`, `ru.ts`, `zh-cn.ts`, `index.ts`).
+  - Integrated `TranslateService` across all settings tabs, status badges, banners, buttons, placeholders, notifications, hotkeys, and the toolbar button.
+  - Added localized GitHub documentation (`README.md`, `README.ru-RU.md`, `README.zh-CN.md`) with language switcher badges.
+  - Updated AI agent development rules (`SKILL.md` and `.agents/rules/tabby-plugin.md`) to enforce synchronous dictionary and documentation updates during future development.
+
+
 ## [0.3.4] - 2026-11-22
 
 ### Changed

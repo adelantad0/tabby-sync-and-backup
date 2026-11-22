@@ -1,5 +1,7 @@
 # Tabby Sync & Backup
 
+[English](README.md) | [Русский](README.ru-RU.md) | [简体中文](README.zh-CN.md)
+
 Two-in-one synchronization and automated backup tool for [Tabby Terminal](https://github.com/Eugeny/tabby).
 
 ## Overview
@@ -15,6 +17,7 @@ Two-in-one synchronization and automated backup tool for [Tabby Terminal](https:
 - **Automated Pre-Sync Snapshots**: Mandatory local backup snapshot created prior to any configuration merge.
 - **Storage Connection Probes**: Real-time latency measurement and validation for WebDAV and local directories.
 - **Selective Sync**: Choose whether to sync profiles, folders, vault secrets, or themes while keeping OS shell paths and local hotkeys untouched.
+- **Multi-Language Support (i18n)**: Full native localization in English, Russian (Русский), and Simplified Chinese (简体中文). Automatically adapts to your Tabby language settings.
 
 ## Settings & Sub-tabs
 

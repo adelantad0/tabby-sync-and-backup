@@ -207,9 +207,9 @@ export class SyncEngineService {
                 if (result.conflictsCreated > 0) parts.push(`!${result.conflictsCreated} conflicts`)
                 const summary = parts.join(', ')
 
-                this.notifications.notice(`Sync completed: ${summary}`)
+                this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.SYNC_COMPLETED', { summary }))
             } else if (manual) {
-                this.notifications.notice('Sync completed: Everything is up to date!')
+                this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.SYNC_UP_TO_DATE'))
             }
 
             return result
@@ -231,7 +231,7 @@ export class SyncEngineService {
                 this.lastSyncStatus = 'error'
                 this.lastSyncError = err?.message || String(err)
                 if (manual) {
-                    this.notifications.error(`Sync failed: ${this.lastSyncError}`)
+                    this.notifications.error(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.SYNC_FAILED', { err: this.lastSyncError }))
                 }
             }
             throw err
