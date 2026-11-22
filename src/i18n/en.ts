@@ -10,6 +10,7 @@ export const en = {
             CLEAN_DESC: 'Settings are saved on disk.',
             DISCARD: 'Discard',
             SAVE: '💾 Save Settings',
+            SWITCH_PROMPT: 'You have unsaved changes. Do you want to save them before leaving this tab?',
         },
 
         TABS: {

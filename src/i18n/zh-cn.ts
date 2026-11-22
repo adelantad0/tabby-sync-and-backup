@@ -10,6 +10,7 @@ export const zhCN = {
             CLEAN_DESC: '设置已保存至磁盘。',
             DISCARD: '放弃更改',
             SAVE: '💾 保存设置',
+            SWITCH_PROMPT: '您有尚未保存的更改。是否在离开此标签页前保存？',
         },
 
         TABS: {

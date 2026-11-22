@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-22
+
+### Changed
+- **Sync Tab Layout Reordering**:
+  - Reorganized configuration cards in the Sync tab into an intuitive sequence:
+    1. Storage Provider Configuration
+    2. Selective Synchronization
+    3. Synchronization Automation & Schedule (Triggers)
+    4. Device Identity
+    5. Connected Cluster Devices
+- **Sticky Floating Save Bar**:
+  - Pinned the Save Bar to the top of the viewport (`position: sticky; top: 0`) when unsaved changes exist (`isDirty`), keeping save and discard actions always in sight when scrolling.
+  - Automatically hidden when all changes are saved or discarded.
+  - Improved visual polish: solid theme background, unified button heights and padding, fixed button text wrapping (`text-nowrap`), and resolved duplicate emoji formatting.
+- **Unsaved Changes Guard on Tab Navigation**:
+  - Added confirmation dialog when attempting to switch between settings tabs with unsaved changes, offering options to save, discard, or cancel.
+
 ## [0.4.1] - 2026-11-22
 
 ### Added

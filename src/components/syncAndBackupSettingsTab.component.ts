@@ -52,32 +52,28 @@ interface UpdateInfo {
 
         <!-- Sticky / Prominent Save Bar when settings are modified -->
         <div
-            class="d-flex align-items-center justify-content-between p-3 mb-3 rounded"
-            [style.background]="isDirty ? 'rgba(255, 193, 7, 0.12)' : 'rgba(255, 255, 255, 0.04)'"
-            [style.border]="isDirty ? '1px solid rgba(255, 193, 7, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)'"
+            class="sticky-save-bar d-flex align-items-center justify-content-between px-3 py-2 mb-3 rounded"
+            *ngIf="isDirty"
         >
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-warning text-dark" [class.d-none]="!isDirty">{{ t('SYNC_BACKUP.SAVE_BAR.DIRTY') }}</span>
-                <span class="badge bg-secondary" [class.d-none]="isDirty">{{ t('SYNC_BACKUP.SAVE_BAR.CLEAN') }}</span>
-                <span class="text-muted small">
-                    {{ isDirty ? t('SYNC_BACKUP.SAVE_BAR.DIRTY_DESC') : t('SYNC_BACKUP.SAVE_BAR.CLEAN_DESC') }}
+            <div class="d-flex align-items-center gap-3 overflow-hidden me-3">
+                <span class="badge bg-warning text-dark text-nowrap px-2 py-1 fw-bold">
+                    {{ t('SYNC_BACKUP.SAVE_BAR.DIRTY') }}
+                </span>
+                <span class="text-light small text-truncate">
+                    {{ t('SYNC_BACKUP.SAVE_BAR.DIRTY_DESC') }}
                 </span>
             </div>
-            <div class="d-flex gap-2">
+            <div class="d-flex align-items-center gap-2 flex-shrink-0">
                 <button
                     type="button"
-                    class="btn btn-sm btn-outline-secondary"
-                    [disabled]="!isDirty"
+                    class="btn btn-sm btn-outline-secondary text-nowrap px-3"
                     (click)="discardChanges()"
                 >
                     {{ t('SYNC_BACKUP.SAVE_BAR.DISCARD') }}
                 </button>
                 <button
                     type="button"
-                    class="btn btn-sm"
-                    [class.btn-warning]="isDirty"
-                    [class.btn-primary]="!isDirty"
-                    [disabled]="!isDirty"
+                    class="btn btn-sm btn-warning text-dark text-nowrap fw-bold px-3"
                     (click)="saveSettings()"
                 >
                     {{ t('SYNC_BACKUP.SAVE_BAR.SAVE') }}
@@ -222,49 +218,7 @@ interface UpdateInfo {
                 </div>
             </div>
 
-            <!-- 2. This Device Identity Card -->
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_IDENTITY_TITLE') }}</span>
-                    <span class="badge bg-dark border">{{ getPlatformLabel(thisPlatform) }}</span>
-                </div>
-                <div class="card-body">
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_NAME') }}</label>
-                            <input
-                                type="text"
-                                class="form-control"
-                                [placeholder]="t('SYNC_BACKUP.SYNC.DEVICE_NAME_PLACEHOLDER')"
-                                [(ngModel)]="formData.deviceName"
-                                (ngModelChange)="onDeviceNameChange($event)"
-                            />
-                            <div class="form-text">
-                                {{ t('SYNC_BACKUP.SYNC.DEVICE_NAME_HINT') }}
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_ID') }}</label>
-                            <div class="input-group">
-                                <input
-                                    type="text"
-                                    class="form-control form-control-sm font-monospace bg-light text-dark"
-                                    readonly
-                                    [value]="thisDeviceId"
-                                />
-                                <button type="button" class="btn btn-outline-secondary btn-sm" (click)="copyDeviceId()">
-                                    {{ t('SYNC_BACKUP.SYNC.COPY') }}
-                                </button>
-                            </div>
-                            <div class="form-text">
-                                {{ t('SYNC_BACKUP.SYNC.DEVICE_ID_HINT') }} (<code>devices/{{ thisDeviceId.substring(0, 8) }}...json</code>).
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3. Storage Provider Configuration -->
+            <!-- 1. Storage Provider Configuration -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-bold">{{ t('SYNC_BACKUP.SYNC.STORAGE_TITLE') }}</span>
@@ -412,7 +366,7 @@ interface UpdateInfo {
                 </div>
             </div>
 
-            <!-- 4. Selective Synchronization Card -->
+            <!-- 2. Selective Synchronization Card -->
             <div class="card mb-3">
                 <div class="card-header">
                     <span class="fw-bold">🎛️ {{ t('SYNC_BACKUP.SYNC.SELECTIVE_TITLE') }}</span>
@@ -475,7 +429,7 @@ interface UpdateInfo {
                 </div>
             </div>
 
-            <!-- 5. Synchronization Automation & Schedule Card -->
+            <!-- 3. Synchronization Automation & Schedule Card -->
             <div class="card mb-3">
                 <div class="card-header">
                     <span class="fw-bold">⚙️ {{ t('SYNC_BACKUP.SYNC.AUTOMATION_TITLE') }}</span>
@@ -561,7 +515,49 @@ interface UpdateInfo {
                 </div>
             </div>
 
-            <!-- 6. Connected Cluster Devices Card -->
+            <!-- 4. This Device Identity Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_IDENTITY_TITLE') }}</span>
+                    <span class="badge bg-dark border">{{ getPlatformLabel(thisPlatform) }}</span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_NAME') }}</label>
+                            <input
+                                type="text"
+                                class="form-control"
+                                [placeholder]="t('SYNC_BACKUP.SYNC.DEVICE_NAME_PLACEHOLDER')"
+                                [(ngModel)]="formData.deviceName"
+                                (ngModelChange)="onDeviceNameChange($event)"
+                            />
+                            <div class="form-text">
+                                {{ t('SYNC_BACKUP.SYNC.DEVICE_NAME_HINT') }}
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">{{ t('SYNC_BACKUP.SYNC.DEVICE_ID') }}</label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    class="form-control form-control-sm font-monospace bg-light text-dark"
+                                    readonly
+                                    [value]="thisDeviceId"
+                                />
+                                <button type="button" class="btn btn-outline-secondary btn-sm" (click)="copyDeviceId()">
+                                    {{ t('SYNC_BACKUP.SYNC.COPY') }}
+                                </button>
+                            </div>
+                            <div class="form-text">
+                                {{ t('SYNC_BACKUP.SYNC.DEVICE_ID_HINT') }} (<code>devices/{{ thisDeviceId.substring(0, 8) }}...json</code>).
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Connected Cluster Devices Card -->
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <span class="fw-bold">🌐 {{ t('SYNC_BACKUP.SYNC.CLUSTER_TITLE') }}</span>
@@ -1285,6 +1281,15 @@ interface UpdateInfo {
     `,
     styles: [
         `
+            .sticky-save-bar {
+                position: sticky;
+                top: 0;
+                z-index: 1050;
+                background: #1e2227;
+                border: 1px solid rgba(255, 193, 7, 0.85);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+                min-height: 48px;
+            }
             .nav-pills .nav-link {
                 color: var(--bs-body-color, #c8c8c8);
                 cursor: pointer;
@@ -1777,7 +1782,28 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         this.notifications.info(this.t('SYNC_BACKUP.NOTIFICATIONS.SETTINGS_DISCARDED'))
     }
 
-    setTab(tab: SettingsSubTab): void {
+    async setTab(tab: SettingsSubTab): Promise<void> {
+        if (this.isDirty && tab !== this.activeTab) {
+            const res = await this.platform.showMessageBox({
+                type: 'warning',
+                message: this.t('SYNC_BACKUP.SAVE_BAR.DIRTY'),
+                detail: this.t('SYNC_BACKUP.SAVE_BAR.SWITCH_PROMPT') || this.t('SYNC_BACKUP.SAVE_BAR.DIRTY_DESC'),
+                buttons: [
+                    this.t('SYNC_BACKUP.SAVE_BAR.SAVE'),
+                    this.t('SYNC_BACKUP.SAVE_BAR.DISCARD'),
+                    this.t('SYNC_BACKUP.BACKUPS.MODAL_CANCEL') || 'Cancel',
+                ],
+                defaultId: 0,
+                cancelId: 2,
+            })
+            if (res.response === 0) {
+                await this.saveSettings()
+            } else if (res.response === 1) {
+                this.discardChanges()
+            } else {
+                return
+            }
+        }
         this.activeTab = tab
         if (tab === 'sync') {
             this.loadClusterDevices()
