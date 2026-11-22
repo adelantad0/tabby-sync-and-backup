@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-22
+
+### Fixed
+- **Profile Group Synchronization (`config.store.groups`)**:
+  - Fixed property mismatch: Tabby stores profile groups under `config.store.groups` (not `config.store.profileGroups`).
+  - Groups created on peer devices are now properly discovered, synced into the cluster state, and added to the local device's `groups` array, preventing synced profiles from falling into the "Ungrouped" bucket.
+
 ## [0.3.1] - 2026-11-22
 
 ### Fixed

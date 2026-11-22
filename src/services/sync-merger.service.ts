@@ -26,7 +26,7 @@ export class SyncMergerService {
         const platform = this.deviceIdentity.getPlatform()
 
         const currentProfiles: any[] = (this.config.store.profiles || []).filter((p: any) => !p.isBuiltin)
-        const currentGroups: any[] = this.config.store.profileGroups || []
+        const currentGroups: any[] = (this.config.store.groups || this.config.store.profileGroups || [])
 
         const profileEntries: Record<string, SyncProfileEntry> = {}
         const groupEntries: Record<string, SyncProfileGroupEntry> = {}
@@ -106,7 +106,11 @@ export class SyncMergerService {
 
         // 3. Process current local profile groups
         for (const group of currentGroups) {
-            if (!group || !group.id) continue
+            if (!group) continue
+            if (!group.id && group.name) {
+                group.id = group.name
+            }
+            if (!group.id) continue
             const contentHash = this.deviceIdentity.hashContent(group)
             const prev = prevGroups[group.id]
 
@@ -199,7 +203,7 @@ export class SyncMergerService {
         // Working copy of merged state
         const mergedState: SyncDeviceState = JSON.parse(JSON.stringify(localState))
         const localProfiles: any[] = [...(this.config.store.profiles || [])]
-        const localGroups: any[] = [...(this.config.store.profileGroups || [])]
+        const localGroups: any[] = [...(this.config.store.groups || this.config.store.profileGroups || [])]
 
         // Filter out self device state
         const peerStates = remoteStates.filter(s => s && s.deviceId && s.deviceId !== localState.deviceId)
@@ -374,7 +378,7 @@ export class SyncMergerService {
 
         if (hasChanges) {
             this.config.store.profiles = localProfiles
-            this.config.store.profileGroups = localGroups
+            this.config.store.groups = localGroups
             await this.config.save()
         }
 
