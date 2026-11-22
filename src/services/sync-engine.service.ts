@@ -27,6 +27,8 @@ export class SyncEngineService {
     private lastFocusSyncTimestamp = 0
     private periodicIntervalId: any = null
     private isInitialized = false
+    private configChangeTimer: any = null
+    private lastSyncedConfigHash = ''
 
     constructor(
         private config: ConfigService,
@@ -79,6 +81,60 @@ export class SyncEngineService {
 
         // 3. Periodic timer
         this.restartPeriodicTimer()
+
+        // 4. Initialize baseline hash of synchronized entities
+        try {
+            const initialLocalState = this.syncMerger.buildLocalDeviceState()
+            this.lastSyncedConfigHash = this.deviceIdentity.hashContent({
+                profiles: initialLocalState.profiles,
+                groups: initialLocalState.profileGroups,
+                vault: initialLocalState.vault,
+                colorSchemes: initialLocalState.themes,
+            })
+        } catch {
+            // Ignore initial hash error
+        }
+
+        // 5. Config change trigger (debounced by 3.5 seconds)
+        if (this.config.changed$) {
+            this.config.changed$.subscribe(() => {
+                const cfg = this.config.store?.syncAndBackup
+                if (!cfg?.syncEnabled || !cfg?.syncOnConfigChange || this.isSyncing) {
+                    return
+                }
+
+                if (this.configChangeTimer) {
+                    clearTimeout(this.configChangeTimer)
+                }
+
+                this.configChangeTimer = setTimeout(() => {
+                    const currentCfg = this.config.store?.syncAndBackup
+                    if (!currentCfg?.syncEnabled || !currentCfg?.syncOnConfigChange || this.isSyncing) {
+                        return
+                    }
+
+                    try {
+                        const localState = this.syncMerger.buildLocalDeviceState()
+                        const contentToHash = {
+                            profiles: localState.profiles,
+                            groups: localState.profileGroups,
+                            vault: localState.vault,
+                            colorSchemes: localState.themes,
+                        }
+                        const currentHash = this.deviceIdentity.hashContent(contentToHash)
+                        if (currentHash === this.lastSyncedConfigHash) {
+                            return
+                        }
+                        console.log('[tabby-sync-and-backup] Config change detected on synced entities, triggering auto-sync...')
+                        this.syncNow(false).catch(err => {
+                            console.warn('[tabby-sync-and-backup] Config change sync encountered an issue:', err)
+                        })
+                    } catch (e) {
+                        console.warn('[tabby-sync-and-backup] Error evaluating config change:', e)
+                    }
+                }, 3500)
+            })
+        }
     }
 
     /**
@@ -183,6 +239,18 @@ export class SyncEngineService {
             this.config.store.syncAndBackup._lastPublishedState = mergedState
             this.config.store.syncAndBackup.lastSyncedAt = Date.now()
             await this.config.save()
+
+            // Update baseline hash of synced entities to prevent circular sync trigger
+            try {
+                this.lastSyncedConfigHash = this.deviceIdentity.hashContent({
+                    profiles: mergedState.profiles,
+                    groups: mergedState.profileGroups,
+                    vault: mergedState.vault,
+                    colorSchemes: mergedState.themes,
+                })
+            } catch {
+                // Ignore hash update error
+            }
 
             // Update internal service status
             this.lastSyncStatus = 'success'

@@ -444,10 +444,10 @@ interface UpdateInfo {
                             (change)="onFieldChange('syncEnabled', $any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="enableAutoSyncCheck">
-                            {{ t('SYNC_BACKUP.SYNC.TRIGGER_PERIODIC') }}
+                            {{ t('SYNC_BACKUP.SYNC.AUTOMATION_ENABLE') }}
                         </label>
                         <div class="text-muted small">
-                            Automatically coordinates settings across machines using the triggers configured below.
+                            {{ t('SYNC_BACKUP.SYNC.AUTOMATION_ENABLE_HINT') }}
                         </div>
                     </div>
 
@@ -468,7 +468,7 @@ interface UpdateInfo {
                             </div>
                         </div>
 
-                        <div class="form-check mb-3">
+                        <div class="form-check mb-2">
                             <input
                                 class="form-check-input"
                                 type="checkbox"
@@ -481,6 +481,22 @@ interface UpdateInfo {
                             </label>
                             <div class="text-muted small">
                                 {{ t('SYNC_BACKUP.SYNC.TRIGGER_FOCUS_HINT') }}
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-3">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                id="syncOnConfigChangeCheck"
+                                [checked]="formData.syncOnConfigChange"
+                                (change)="onFieldChange('syncOnConfigChange', $any($event.target).checked)"
+                            />
+                            <label class="form-check-label" for="syncOnConfigChangeCheck">
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_CONFIG_CHANGE') }}
+                            </label>
+                            <div class="text-muted small">
+                                {{ t('SYNC_BACKUP.SYNC.TRIGGER_CONFIG_CHANGE_HINT') }}
                             </div>
                         </div>
 
@@ -1568,6 +1584,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
             syncOnStartup: saved.syncOnStartup ?? true,
             syncOnFocus: saved.syncOnFocus ?? true,
+            syncOnConfigChange: saved.syncOnConfigChange ?? true,
             periodicSync: saved.periodicSync ?? false,
 
             backupEnabled: saved.backupEnabled ?? true,

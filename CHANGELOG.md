@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-22
+
+### Added
+- **Config Change Automation Trigger (`syncOnConfigChange`)**:
+  - Automatically triggers synchronization when Tabby configuration changes (profiles, groups, vault, or color schemes).
+  - Integrated 3.5s debounce and deterministic SHA-256 entity hash comparison to prevent redundant sync requests and avoid infinite loops.
+  - Full internationalization support across English, Russian, and Simplified Chinese (`src/i18n/`).
+
+### Changed
+- **Automation UI Labels Clarification**:
+  - Renamed the master automation switch to "Enable automated synchronization" (`AUTOMATION_ENABLE`) to clearly distinguish it from the periodic timer trigger.
+
 ## [0.4.2] - 2026-11-22
 
 ### Changed
