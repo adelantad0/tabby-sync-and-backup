@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-22
+
+### Changed
+- **Navigation & Changelog UX**:
+  - Streamlined settings navigation to 4 core tabs (Sync, Backups, Security, About), removing the separate top-level Changelog tab.
+  - Relocated Changelog and Version History to the bottom of the "About" tab.
+  - Implemented dynamic Release Notes engine: automatically fetches live release notes from GitHub Releases API with seamless offline fallback to the bundled `CHANGELOG.md`.
+
 ## [0.3.2] - 2026-11-22
 
 ### Fixed

@@ -7,9 +7,16 @@ import { DeviceIdentityService } from '../services/device-identity.service'
 import { SyncEngineService } from '../services/sync-engine.service'
 import { SyncClusterMember } from '../models/sync.model'
 import packageJson from '../../package.json'
+import changelogRaw from '../../CHANGELOG.md'
 
-type SettingsSubTab = 'sync' | 'backups' | 'security' | 'changelog' | 'about'
+type SettingsSubTab = 'sync' | 'backups' | 'security' | 'about'
 type BackupView = 'local' | 'remote'
+
+interface ChangelogEntry {
+    version: string
+    date: string
+    htmlBody: string
+}
 
 interface UpdateInfo {
     version: string
@@ -107,16 +114,6 @@ interface UpdateInfo {
                     (click)="setTab('security')"
                 >
                     🔐 Security
-                </button>
-            </li>
-            <li class="nav-item">
-                <button
-                    type="button"
-                    class="nav-link btn-link"
-                    [class.active]="activeTab === 'changelog'"
-                    (click)="setTab('changelog')"
-                >
-                    📜 Changelog
                 </button>
             </li>
             <li class="nav-item">
@@ -1141,57 +1138,7 @@ interface UpdateInfo {
             </div>
         </div>
 
-        <!-- ==================== TAB 4: CHANGELOG ==================== -->
-        <div [class.d-none]="activeTab !== 'changelog'">
-            <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span class="fw-bold">Version History &amp; Release Notes</span>
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-outline-secondary"
-                        (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup/releases')"
-                    >
-                        View on GitHub
-                    </button>
-                </div>
-                <div class="card-body">
-                    <!-- v0.2.0 -->
-                    <div class="mb-4">
-                        <div class="d-flex align-items-center gap-2 mb-2">
-                            <span class="badge bg-success">v0.2.0</span>
-                            <span class="text-muted small">2026-11-21 (Latest Release)</span>
-                        </div>
-                        <ul class="mb-0">
-                            <li><strong>AES-256-GCM Backup Encryption</strong>: Full payload encryption with instant verification badges (Plain, Protected, Other Key).</li>
-                            <li><strong>Safe Password Workflow</strong>: Password confirmation, eye toggles, match validation, and batch re-encryption of local backups.</li>
-                            <li><strong>Historic Password Support</strong>: Seamless restore dialog for snapshots encrypted with earlier master passwords.</li>
-                            <li><strong>Local &amp; Remote Backups Engine</strong>: Dual snapshot management supporting local storage in Tabby config directory and remote storage under <code>/backups/</code>.</li>
-                            <li><strong>Pre-Restore Safety Snapshot &amp; Restart</strong>: Automatic safety backup and application restart upon configuration restore.</li>
-                            <li><strong>Settings Persistence Protection</strong>: Restoring older snapshots preserves current master passwords and sync targets.</li>
-                            <li><strong>Dual Retention Policy &amp; Rotation</strong>: Automated pruning and rotation of both local and remote snapshots based on max retention limit.</li>
-                        </ul>
-                    </div>
-
-                    <hr />
-
-                    <!-- v0.1.0 -->
-                    <div>
-                        <div class="d-flex align-items-center gap-2 mb-2">
-                            <span class="badge bg-success">v0.1.0</span>
-                            <span class="text-muted small">2026-11-20 (Initial Release)</span>
-                        </div>
-                        <ul class="mb-0">
-                            <li>Initial plugin scaffolding and integration with Tabby settings sidebar.</li>
-                            <li>Toolbar quick-access button and hotkey actions.</li>
-                            <li>Configuration schema integration with <code>config.yaml</code>.</li>
-                            <li>Automated GitHub release pipeline.</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== TAB 5: ABOUT ==================== -->
+        <!-- ==================== TAB 4: ABOUT ==================== -->
         <div [class.d-none]="activeTab !== 'about'">
             <!-- Update Available Alert Banner -->
             <div class="alert alert-success d-flex align-items-center justify-content-between mb-3 text-start" [class.d-none]="!updateInfo">
@@ -1264,6 +1211,53 @@ interface UpdateInfo {
                     </div>
                 </div>
             </div>
+
+            <!-- Dynamic Changelog & Release Notes Card -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="fw-bold">📜 Release Notes &amp; Version History</span>
+                        <span class="badge bg-success" *ngIf="changelogSource === 'github'">Online (GitHub)</span>
+                        <span class="badge bg-secondary" *ngIf="changelogSource === 'local'">Bundled</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            [disabled]="isLoadingChangelog"
+                            (click)="refreshChangelog()"
+                            title="Refresh Release Notes from GitHub"
+                        >
+                            <span [class.d-none]="isLoadingChangelog">🔄 Refresh</span>
+                            <span [class.d-none]="!isLoadingChangelog">⏳ Loading...</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-secondary"
+                            (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup/releases')"
+                        >
+                            View on GitHub ↗
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div *ngIf="isLoadingChangelog && changelogEntries.length === 0" class="text-center py-3 text-muted">
+                        <i class="fas fa-spinner fa-spin me-2"></i> Loading release history...
+                    </div>
+                    <div *ngIf="!isLoadingChangelog && changelogEntries.length === 0" class="text-muted small">
+                        No release notes found.
+                    </div>
+                    <div *ngFor="let item of changelogEntries; let last = last" class="mb-3">
+                        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                            <span class="badge bg-primary" *ngIf="item.version === pluginVersion">v{{ item.version }} (Current)</span>
+                            <span class="badge bg-secondary" *ngIf="item.version !== pluginVersion">v{{ item.version }}</span>
+                            <span class="text-muted small" *ngIf="item.date">{{ item.date }}</span>
+                        </div>
+                        <div class="ps-2 text-start small changelog-body" [innerHTML]="item.htmlBody"></div>
+                        <hr *ngIf="!last" class="my-3 opacity-25" />
+                    </div>
+                </div>
+            </div>
         </div>
     `,
     styles: [
@@ -1290,6 +1284,20 @@ interface UpdateInfo {
             .card-header {
                 background-color: rgba(255, 255, 255, 0.05);
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .changelog-body code {
+                background: rgba(255, 255, 255, 0.1);
+                color: #e2e8f0;
+                padding: 1px 5px;
+                border-radius: 4px;
+                font-size: 85%;
+            }
+            .changelog-body ul {
+                margin-bottom: 0.5rem;
+            }
+            .changelog-body li {
+                margin-bottom: 0.25rem;
+                line-height: 1.45;
             }
             .security-box {
                 background: rgba(0, 0, 0, 0.25) !important;
@@ -1380,6 +1388,10 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     backupView: BackupView = 'local'
     pluginVersion: string = packageJson.version || '0.1.0'
 
+    changelogEntries: ChangelogEntry[] = []
+    isLoadingChangelog: boolean = false
+    changelogSource: 'github' | 'local' = 'local'
+
     isDirty: boolean = false
     formData: any = {
         syncEnabled: false,
@@ -1459,6 +1471,8 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     async ngOnInit(): Promise<void> {
         this.resetForm()
+        this.loadLocalChangelog()
+        this.refreshChangelog().catch(() => null)
         await this.loadLocalBackups()
         await this.loadClusterDevices()
     }
@@ -2137,5 +2151,89 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             if (r < c) return false
         }
         return false
+    }
+
+    formatMarkdown(text: string): string {
+        if (!text) return ''
+        let html = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+
+        // Section headers
+        html = html.replace(/###\s+(Added|Fixed|Changed|Security|Removed|Deprecated)[^\n]*/gi, (_, cat) => {
+            const lower = cat.toLowerCase()
+            const colorClass = lower === 'fixed' ? 'text-info' : lower === 'added' ? 'text-success' : 'text-warning'
+            return `<div class="fw-bold mt-2 mb-1 ${colorClass}">${cat}:</div>`
+        })
+
+        // Bold and inline code
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+        // Lists
+        html = html.replace(/^-\s+(.+)$/gm, '<li>$1</li>')
+        html = html.replace(/(<li>.*<\/li>(\r?\n)?)+/g, (match) => `<ul class="mb-1 ps-3">${match}</ul>`)
+
+        // Line breaks for paragraphs that aren't inside lists
+        html = html.replace(/\n\n/g, '<br/>')
+
+        return html
+    }
+
+    loadLocalChangelog(): void {
+        try {
+            const entries: ChangelogEntry[] = []
+            const sections = (changelogRaw || '').split(/\n##\s+\[?/)
+            for (const sec of sections) {
+                if (!sec.trim()) continue
+                const firstLineEnd = sec.indexOf('\n')
+                const header = (firstLineEnd !== -1 ? sec.substring(0, firstLineEnd) : sec).trim()
+                const body = (firstLineEnd !== -1 ? sec.substring(firstLineEnd) : '').trim()
+                const vMatch = header.match(/^v?([0-9]+\.[0-9]+\.[0-9]+[^\]\s]*)/)
+                if (!vMatch) continue
+                const version = vMatch[1]
+                const dMatch = header.match(/\b(20\d\d-\d\d-\d\d)\b/)
+                const date = dMatch ? dMatch[1] : ''
+                entries.push({
+                    version,
+                    date,
+                    htmlBody: this.formatMarkdown(body),
+                })
+            }
+            if (entries.length > 0) {
+                this.changelogEntries = entries
+                this.changelogSource = 'local'
+            }
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not parse local changelog:', e)
+        }
+    }
+
+    async refreshChangelog(): Promise<void> {
+        this.isLoadingChangelog = true
+        try {
+            const response = await fetch(
+                'https://api.github.com/repos/adelantad0/tabby-sync-and-backup/releases?per_page=10',
+                {
+                    headers: { Accept: 'application/vnd.github.v3+json' },
+                },
+            )
+            if (response.ok) {
+                const releases = await response.json()
+                if (Array.isArray(releases) && releases.length > 0) {
+                    this.changelogEntries = releases.map((r: any) => ({
+                        version: (r.tag_name || '').replace(/^v/, ''),
+                        date: r.published_at ? new Date(r.published_at).toISOString().split('T')[0] : '',
+                        htmlBody: this.formatMarkdown(r.body || ''),
+                    }))
+                    this.changelogSource = 'github'
+                }
+            }
+        } catch (err) {
+            console.warn('[tabby-sync-and-backup] Could not fetch remote releases, using bundled changelog:', err)
+        } finally {
+            this.isLoadingChangelog = false
+        }
     }
 }
