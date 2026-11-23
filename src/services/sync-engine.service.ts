@@ -285,7 +285,8 @@ export class SyncEngineService {
                 result.conflictsCreated +
                 result.groupsAdded +
                 result.groupsUpdated +
-                result.groupsDeleted
+                result.groupsDeleted +
+                (result.vaultUpdated ? 1 : 0)
 
             if (changesCount > 0) {
                 const parts: string[] = []
@@ -293,6 +294,7 @@ export class SyncEngineService {
                 if (result.profilesUpdated > 0) parts.push(`~${result.profilesUpdated} updated`)
                 if (result.profilesDeleted > 0) parts.push(`-${result.profilesDeleted} deleted`)
                 if (result.conflictsCreated > 0) parts.push(`!${result.conflictsCreated} conflicts`)
+                if (result.vaultUpdated) parts.push(`~vault updated`)
                 const summary = parts.join(', ')
 
                 this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.SYNC_COMPLETED', { summary }))

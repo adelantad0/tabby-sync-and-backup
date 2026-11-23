@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-11-23
+
+### Added
+- **Tabby Vault Container Synchronization & Anti-Clobbering Protection**:
+  - **Encrypted Container Sync**: When `syncVault` is enabled, the Tabby Vault state (`version`, `contents`, `keySalt`, `iv`) is synchronized across devices with Lamport revision tracking and SHA-256 content verification.
+  - **Zero-Wipe / Anti-Clobbering Circuit Breaker**: If a remote peer device has an empty, null, or disabled vault, incoming sync is rejected from clobbering an existing active local vault, preventing accidental data loss.
+  - **Sanity & Integrity Validation**: Remote vault structures are validated for valid cryptographic parameters before applying to `config.store.vault`.
+  - **Live Runtime State Propagation**: Calls `VaultService.setStore()` on incoming vault updates to notify the active Tabby session immediately.
+  - **Automatic Change Detection**: Automatically detects secret modifications in `config.store.vault` via content hashing, triggering debounced background sync.
+
 ## [0.6.5] - 2026-11-23
 
 ### Fixed

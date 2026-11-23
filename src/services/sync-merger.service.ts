@@ -1,9 +1,10 @@
-import { Injectable } from '@angular/core'
-import { ConfigService } from 'tabby-core'
+import { Injectable, Optional } from '@angular/core'
+import { ConfigService, VaultService } from 'tabby-core'
 import {
     SyncDeviceState,
     SyncProfileEntry,
     SyncProfileGroupEntry,
+    SyncVaultState,
     SyncMergeResult,
 } from '../models/sync.model'
 import { DeviceIdentityService } from './device-identity.service'
@@ -15,6 +16,7 @@ export class SyncMergerService {
     constructor(
         private config: ConfigService,
         private deviceIdentity: DeviceIdentityService,
+        @Optional() private vault?: VaultService,
     ) {}
 
     /**
@@ -169,6 +171,69 @@ export class SyncMergerService {
             }
         }
 
+        // 5. Process Tabby Vault state
+        let vaultState: SyncVaultState | undefined = undefined
+        const isVaultSyncEnabled = !!this.config.store?.syncAndBackup?.syncVault
+        if (isVaultSyncEnabled) {
+            const rawVault = this.config.store.vault
+            const hasLocalVault = !!(
+                rawVault &&
+                typeof rawVault === 'object' &&
+                rawVault.contents &&
+                rawVault.iv &&
+                rawVault.keySalt
+            )
+
+            const prevVault = previousState?.vault
+
+            if (hasLocalVault) {
+                const vaultHash = this.deviceIdentity.hashContent({
+                    version: rawVault.version,
+                    contents: rawVault.contents,
+                    keySalt: rawVault.keySalt,
+                    iv: rawVault.iv,
+                })
+
+                let vaultRev = 1
+                let vaultBaseRev = 0
+
+                if (!prevVault) {
+                    vaultRev = 1
+                    vaultBaseRev = 0
+                } else if (prevVault.contentHash === vaultHash && prevVault.enabled) {
+                    vaultRev = prevVault.rev || 1
+                    vaultBaseRev = prevVault.baseRev || 0
+                } else {
+                    vaultRev = (prevVault.rev || 1) + 1
+                    vaultBaseRev = prevVault.rev || 1
+                }
+
+                vaultState = {
+                    enabled: true,
+                    rev: vaultRev,
+                    baseRev: vaultBaseRev,
+                    contentHash: vaultHash,
+                    updatedAt: new Date().toISOString(),
+                    data: {
+                        version: rawVault.version || 1,
+                        contents: rawVault.contents,
+                        keySalt: rawVault.keySalt,
+                        iv: rawVault.iv,
+                    },
+                }
+            } else if (prevVault && prevVault.enabled) {
+                // Was previously enabled, now disabled or erased locally
+                vaultState = {
+                    enabled: false,
+                    rev: (prevVault.rev || 1) + 1,
+                    baseRev: prevVault.rev || 1,
+                    contentHash: '',
+                    updatedAt: new Date().toISOString(),
+                    data: null,
+                }
+            }
+        }
+
         return {
             formatVersion: 1,
             deviceId,
@@ -177,6 +242,7 @@ export class SyncMergerService {
             updatedAt: new Date().toISOString(),
             profiles: profileEntries,
             profileGroups: groupEntries,
+            vault: vaultState,
         }
     }
 
@@ -365,7 +431,138 @@ export class SyncMergerService {
         }
 
         // -------------------------------------------------------------
-        // C. APPLY CHANGES TO TABBY CONFIG STORE & SAVE
+        // C. MERGE VAULT (with Anti-Clobbering / Zero-Wipe Protection)
+        // -------------------------------------------------------------
+        const isVaultSyncEnabled = !!this.config.store?.syncAndBackup?.syncVault
+        if (isVaultSyncEnabled) {
+            const currentLocalVault = this.config.store.vault
+            const hasLocalVault = !!(
+                currentLocalVault &&
+                typeof currentLocalVault === 'object' &&
+                currentLocalVault.contents &&
+                currentLocalVault.iv &&
+                currentLocalVault.keySalt
+            )
+
+            for (const peerState of peerStates) {
+                const remoteVault = peerState.vault
+                if (!remoteVault) continue
+
+                // CIRCUIT BREAKER 1: If remote vault is disabled/empty/null, but local has a valid vault,
+                // NEVER CLOBBER local vault! Skip to prevent wiping out data.
+                if (!remoteVault.enabled || !remoteVault.data) {
+                    if (hasLocalVault) {
+                        console.warn(
+                            `[tabby-sync-and-backup] Peer "${peerState.deviceName || peerState.deviceId}" has no active vault. Preserving local vault from clobbering.`
+                        )
+                    }
+                    continue
+                }
+
+                // CIRCUIT BREAKER 2: Integrity & sanity check on remote vault structure
+                const remoteData = remoteVault.data
+                const isValidRemoteStructure = !!(
+                    remoteData &&
+                    typeof remoteData === 'object' &&
+                    typeof remoteData.contents === 'string' &&
+                    remoteData.contents.trim().length > 0 &&
+                    typeof remoteData.iv === 'string' &&
+                    remoteData.iv.trim().length > 0 &&
+                    typeof remoteData.keySalt === 'string' &&
+                    remoteData.keySalt.trim().length > 0
+                )
+
+                if (!isValidRemoteStructure) {
+                    console.warn(
+                        `[tabby-sync-and-backup] Peer "${peerState.deviceName || peerState.deviceId}" published malformed vault data. Rejecting remote vault.`
+                    )
+                    continue
+                }
+
+                const localVaultEntry = mergedState.vault
+                const localHash = localVaultEntry?.contentHash || (hasLocalVault ? this.deviceIdentity.hashContent({
+                    version: currentLocalVault.version,
+                    contents: currentLocalVault.contents,
+                    keySalt: currentLocalVault.keySalt,
+                    iv: currentLocalVault.iv,
+                }) : '')
+
+                if (localHash === remoteVault.contentHash) {
+                    // Identical contents, fast-forward rev
+                    if (localVaultEntry) {
+                        localVaultEntry.rev = Math.max(localVaultEntry.rev || 1, remoteVault.rev || 1)
+                    }
+                } else if (!hasLocalVault) {
+                    // Local machine had no vault, adopt remote vault safely!
+                    console.log(`[tabby-sync-and-backup] Adopting vault from peer "${peerState.deviceName || peerState.deviceId}" (rev ${remoteVault.rev})`)
+                    this.config.store.vault = {
+                        version: remoteData.version || 1,
+                        contents: remoteData.contents,
+                        keySalt: remoteData.keySalt,
+                        iv: remoteData.iv,
+                    }
+                    try {
+                        this.vault?.setStore(this.config.store.vault)
+                    } catch (e) {
+                        console.warn('[tabby-sync-and-backup] Could not update runtime vault store:', e)
+                    }
+                    mergedState.vault = { ...remoteVault }
+                    result.vaultUpdated = true
+                } else {
+                    // Both have vault data, compare Lamport revisions
+                    const localRev = localVaultEntry?.rev || 1
+                    const remoteRev = remoteVault.rev || 1
+
+                    if (remoteRev > localRev) {
+                        console.log(
+                            `[tabby-sync-and-backup] Remote vault from "${peerState.deviceName || peerState.deviceId}" is newer (rev ${remoteRev} > ${localRev}). Updating local vault.`
+                        )
+                        this.config.store.vault = {
+                            version: remoteData.version || 1,
+                            contents: remoteData.contents,
+                            keySalt: remoteData.keySalt,
+                            iv: remoteData.iv,
+                        }
+                        try {
+                            this.vault?.setStore(this.config.store.vault)
+                        } catch (e) {
+                            console.warn('[tabby-sync-and-backup] Could not update runtime vault store:', e)
+                        }
+                        mergedState.vault = { ...remoteVault }
+                        result.vaultUpdated = true
+                    } else if (localRev > remoteRev) {
+                        console.log(
+                            `[tabby-sync-and-backup] Local vault is newer than peer "${peerState.deviceName || peerState.deviceId}" (local rev ${localRev} > remote rev ${remoteRev}). Keeping local.`
+                        )
+                    } else {
+                        // Concurrent conflict with equal revision, compare timestamps
+                        const localTime = new Date(localVaultEntry?.updatedAt || 0).getTime()
+                        const remoteTime = new Date(remoteVault.updatedAt || 0).getTime()
+                        if (remoteTime > localTime) {
+                            console.log(
+                                `[tabby-sync-and-backup] Remote vault from "${peerState.deviceName || peerState.deviceId}" has newer timestamp. Updating local vault.`
+                            )
+                            this.config.store.vault = {
+                                version: remoteData.version || 1,
+                                contents: remoteData.contents,
+                                keySalt: remoteData.keySalt,
+                                iv: remoteData.iv,
+                            }
+                            try {
+                                this.vault?.setStore(this.config.store.vault)
+                            } catch (e) {
+                                console.warn('[tabby-sync-and-backup] Could not update runtime vault store:', e)
+                            }
+                            mergedState.vault = { ...remoteVault }
+                            result.vaultUpdated = true
+                        }
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // D. APPLY CHANGES TO TABBY CONFIG STORE & SAVE
         // -------------------------------------------------------------
         const hasChanges =
             result.profilesAdded > 0 ||
@@ -374,7 +571,8 @@ export class SyncMergerService {
             result.conflictsCreated > 0 ||
             result.groupsAdded > 0 ||
             result.groupsUpdated > 0 ||
-            result.groupsDeleted > 0
+            result.groupsDeleted > 0 ||
+            result.vaultUpdated
 
         if (hasChanges) {
             this.config.store.profiles = localProfiles

@@ -35,9 +35,10 @@ export interface SyncProfileGroupEntry {
 export interface SyncVaultState {
     enabled: boolean
     rev: number
+    baseRev?: number
     contentHash: string
-    encryptedPayload?: string
     updatedAt: string
+    data?: any
 }
 
 /**
