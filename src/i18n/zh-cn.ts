@@ -162,6 +162,7 @@ export const zhCN = {
             VERSION: '版本',
             AUTHOR: '作者',
             LICENSE: '许可证',
+            DOCUMENTATION: '官方文档',
             GITHUB_REPO: 'GitHub 仓库',
             REPORT_ISSUE: '报告问题',
             CHECK_UPDATES: '检查更新',

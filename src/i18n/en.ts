@@ -162,6 +162,7 @@ export const en = {
             VERSION: 'Version',
             AUTHOR: 'Author',
             LICENSE: 'License',
+            DOCUMENTATION: 'Documentation',
             GITHUB_REPO: 'GitHub Repository',
             REPORT_ISSUE: 'Report an Issue',
             CHECK_UPDATES: 'Check for Updates',

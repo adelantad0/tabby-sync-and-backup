@@ -162,6 +162,7 @@ export const ru = {
             VERSION: 'Версия',
             AUTHOR: 'Автор',
             LICENSE: 'Лицензия',
+            DOCUMENTATION: 'Документация',
             GITHUB_REPO: 'Репозиторий GitHub',
             REPORT_ISSUE: 'Сообщить об ошибке',
             CHECK_UPDATES: 'Проверить обновления',

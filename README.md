@@ -2,7 +2,15 @@
 
 [English](README.md) | [Русский](README.ru-RU.md) | [简体中文](README.zh-CN.md)
 
+[![npm version](https://img.shields.io/npm/v/tabby-sync-and-backup?style=flat-square&logo=npm&logoColor=white&color=cb3837)](https://www.npmjs.com/package/tabby-sync-and-backup)
+[![npm downloads](https://img.shields.io/npm/dm/tabby-sync-and-backup?style=flat-square&color=blue)](https://www.npmjs.com/package/tabby-sync-and-backup)
+[![Documentation](https://img.shields.io/badge/docs-website-7c3aed?style=flat-square&logo=bookstack&logoColor=white)](https://adelantad0.github.io/tabby-sync-and-backup/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+
 Two-in-one synchronization and automated backup tool for [Tabby Terminal](https://github.com/Eugeny/tabby).
+
+📖 **Official Website & Docs:** [https://adelantad0.github.io/tabby-sync-and-backup/](https://adelantad0.github.io/tabby-sync-and-backup/)  
+📦 **npm Package:** [https://www.npmjs.com/package/tabby-sync-and-backup](https://www.npmjs.com/package/tabby-sync-and-backup)
 
 ## Overview
 

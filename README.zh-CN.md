@@ -2,7 +2,15 @@
 
 [English](README.md) | [Русский](README.ru-RU.md) | [简体中文](README.zh-CN.md)
 
+[![npm version](https://img.shields.io/npm/v/tabby-sync-and-backup?style=flat-square&logo=npm&logoColor=white&color=cb3837)](https://www.npmjs.com/package/tabby-sync-and-backup)
+[![npm downloads](https://img.shields.io/npm/dm/tabby-sync-and-backup?style=flat-square&color=blue)](https://www.npmjs.com/package/tabby-sync-and-backup)
+[![中文文档与网站](https://img.shields.io/badge/docs-官方网站-7c3aed?style=flat-square&logo=bookstack&logoColor=white)](https://adelantad0.github.io/tabby-sync-and-backup/zh/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+
 专为 [Tabby Terminal](https://github.com/Eugeny/tabby) 打造的配置同步与自动备份双合一解决方案。
+
+📖 **官方网站与中文文档：** [https://adelantad0.github.io/tabby-sync-and-backup/zh/](https://adelantad0.github.io/tabby-sync-and-backup/zh/)  
+📦 **npm 软件包：** [https://www.npmjs.com/package/tabby-sync-and-backup](https://www.npmjs.com/package/tabby-sync-and-backup)
 
 ## 概述
 

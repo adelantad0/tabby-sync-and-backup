@@ -1212,6 +1212,13 @@ interface UpdateInfo {
                     <div class="d-flex justify-content-center flex-wrap gap-2 mb-3">
                         <button
                             type="button"
+                            class="btn btn-outline-info"
+                            (click)="openUrl('https://adelantad0.github.io/tabby-sync-and-backup/')"
+                        >
+                            🌐 {{ t('SYNC_BACKUP.ABOUT.DOCUMENTATION') }}
+                        </button>
+                        <button
+                            type="button"
                             class="btn btn-outline-primary"
                             (click)="openUrl('https://github.com/adelantad0/tabby-sync-and-backup')"
                         >

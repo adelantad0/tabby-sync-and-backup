@@ -30,7 +30,7 @@
   "bugs": {
     "url": "https://github.com/adelantad0/tabby-sync-and-backup/issues"
   },
-  "homepage": "https://github.com/adelantad0/tabby-sync-and-backup#readme",
+  "homepage": "https://adelantad0.github.io/tabby-sync-and-backup/",
   "tabbyPlugin": {
     "isBuiltin": false
   },
