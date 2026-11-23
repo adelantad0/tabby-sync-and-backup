@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core'
-import { ConfigService, NotificationsService, TranslateService } from 'tabby-core'
+import { ConfigService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
 import { SyncService } from './sync.service'
 import { DeviceIdentityService } from './device-identity.service'
 import { SyncMergerService } from './sync-merger.service'
@@ -38,6 +38,7 @@ export class SyncEngineService {
         private syncMerger: SyncMergerService,
         private backupService: BackupService,
         private translate: TranslateService,
+        private platform: PlatformService,
     ) {
         registerTranslations(this.translate)
     }
@@ -235,6 +236,91 @@ export class SyncEngineService {
             const localState = this.syncMerger.buildLocalDeviceState(cachedPreviousState)
 
             const { mergedState, result } = await this.syncMerger.mergeClusterStates(localState, clusterStates)
+
+            // Interactive Vault Conflict Resolution
+            if (result.vaultConflict) {
+                const conflict = result.vaultConflict
+                console.warn('[tabby-sync-and-backup] Vault conflict detected:', conflict)
+
+                if (manual) {
+                    const res = await this.platform.showMessageBox({
+                        type: 'warning',
+                        message: this.translate.instant('SYNC_BACKUP.CONFLICT.VAULT_TITLE'),
+                        detail: this.translate.instant('SYNC_BACKUP.CONFLICT.VAULT_DETAIL', {
+                            localDevice: conflict.localDeviceName,
+                            remoteDevice: conflict.remoteDeviceName,
+                        }),
+                        buttons: [
+                            this.translate.instant('SYNC_BACKUP.CONFLICT.VAULT_KEEP_LOCAL', { device: conflict.localDeviceName }),
+                            this.translate.instant('SYNC_BACKUP.CONFLICT.VAULT_ADOPT_REMOTE', { device: conflict.remoteDeviceName }),
+                            this.translate.instant('SYNC_BACKUP.CONFLICT.VAULT_ABORT_AND_DISABLE'),
+                        ],
+                        defaultId: 0,
+                        cancelId: 2,
+                    })
+
+                    if (res.response === 0) {
+                        // 1. Keep local Vault, advance revision so it becomes authoritative over remote
+                        console.log('[tabby-sync-and-backup] User chose to KEEP LOCAL vault.')
+                        const localRev = mergedState.vault?.rev || 1
+                        const remoteRev = conflict.remoteVault.rev || 1
+                        const newRev = Math.max(localRev, remoteRev) + 1
+                        if (mergedState.vault) {
+                            mergedState.vault.rev = newRev
+                            mergedState.vault.baseRev = localRev
+                            mergedState.vault.updatedAt = new Date().toISOString()
+                        }
+                        this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.VAULT_KEPT_LOCAL'))
+                    } else if (res.response === 1) {
+                        // 2. Adopt remote Vault from peer
+                        console.log(`[tabby-sync-and-backup] User chose to ADOPT REMOTE vault from "${conflict.remoteDeviceName}".`)
+                        const remoteData = conflict.remoteVault.data
+                        this.config.store.vault = {
+                            version: remoteData.version || 1,
+                            contents: remoteData.contents,
+                            keySalt: remoteData.keySalt,
+                            iv: remoteData.iv,
+                        }
+                        try {
+                            (this.config as any).vault?.setStore(this.config.store.vault)
+                        } catch (e) {
+                            console.warn('[tabby-sync-and-backup] Could not update runtime vault store:', e)
+                        }
+                        const localRev = mergedState.vault?.rev || 1
+                        const remoteRev = conflict.remoteVault.rev || 1
+                        const newRev = Math.max(localRev, remoteRev) + 1
+                        mergedState.vault = {
+                            ...conflict.remoteVault,
+                            rev: newRev,
+                            baseRev: remoteRev,
+                            updatedAt: new Date().toISOString(),
+                        }
+                        await this.config.save()
+                        result.vaultUpdated = true
+                        this.notifications.notice(
+                            this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.VAULT_ADOPTED_REMOTE', {
+                                device: conflict.remoteDeviceName,
+                            })
+                        )
+                    } else {
+                        // 3. User clicked Cancel: Abort & Disable Vault sync (User safe-abort requirement)
+                        console.log('[tabby-sync-and-backup] User chose to ABORT and DISABLE Vault sync.')
+                        this.config.store.syncAndBackup.syncVault = false
+                        delete mergedState.vault
+                        await this.config.save()
+                        this.notifications.notice(
+                            this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.VAULT_SYNC_DISABLED_NOTICE')
+                        )
+                    }
+                } else {
+                    // Background sync: inform user via notification without interrupting terminal typing
+                    this.notifications.notice(
+                        this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.VAULT_CONFLICT_BACKGROUND', {
+                            device: conflict.remoteDeviceName,
+                        })
+                    )
+                }
+            }
 
             // STEP 4: Publish updated state to devices/<deviceId>.json
             await this.syncService.publishDeviceState(target, mergedState)

@@ -3,6 +3,11 @@ export const en = {
         TAB_TITLE: 'Sync & Backup',
         SUBTITLE: 'Synchronize your configuration across devices and manage local automated backups',
 
+        COMMON: {
+            ENABLE: 'Enable',
+            CANCEL: 'Cancel',
+        },
+
         SAVE_BAR: {
             DIRTY: '⚠️ Unsaved Changes',
             CLEAN: '✓ All changes saved',
@@ -87,6 +92,8 @@ export const en = {
             SYNC_COLOR_SCHEMES_HINT: 'Custom terminal color schemes',
             SYNC_VAULT: 'Encrypted Vaults & Credentials',
             SYNC_VAULT_HINT: 'Saved passwords, private keys and secret tokens',
+            VAULT_CONFIRM_TITLE: 'Vault Synchronization',
+            VAULT_CONFIRM_DETAIL: 'Notice: Vault synchronization transfers the encrypted vault container as a whole. If other devices already have a different Vault configured, you will be prompted to choose a primary version during sync. It is recommended to ensure all required secrets are saved on your primary device first.',
 
             AUTOMATION_TITLE: 'Sync Triggers & Automation',
             AUTOMATION_ENABLE: 'Enable automated synchronization',
@@ -210,6 +217,18 @@ export const en = {
             SYNC_FAILED: 'Sync failed: {err}',
             UPLOAD_REMOTE_SUCCESS: 'Uploaded {filename} to remote /backups/!',
             DISASTER_RECOVERY_AVAILABLE: 'Disaster Recovery: No profiles found, but {count} backup snapshot(s) are available in Settings -> Sync & Backup!',
+            VAULT_KEPT_LOCAL: 'Local Vault retained as primary version.',
+            VAULT_ADOPTED_REMOTE: 'Vault updated from device {device}.',
+            VAULT_SYNC_DISABLED_NOTICE: 'Vault sync disabled. Inspect your secrets in Settings -> Vault before re-enabling.',
+            VAULT_CONFLICT_BACKGROUND: 'Vault conflict detected with {device}. Perform manual sync to resolve.',
+        },
+
+        CONFLICT: {
+            VAULT_TITLE: 'Vault Conflict Detected',
+            VAULT_DETAIL: 'Different versions of the encrypted secrets vault were found on this computer ({localDevice}) and remote device ({remoteDevice}).\n\nChoose an action:',
+            VAULT_KEEP_LOCAL: 'Keep local Vault ({device})',
+            VAULT_ADOPT_REMOTE: 'Adopt remote Vault ({device})',
+            VAULT_ABORT_AND_DISABLE: 'Cancel (Disable Vault sync)',
         },
 
         TOOLBAR: {

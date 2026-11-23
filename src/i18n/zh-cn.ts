@@ -3,6 +3,11 @@ export const zhCN = {
         TAB_TITLE: '同步与备份',
         SUBTITLE: '跨设备同步终端配置并管理本地自动备份',
 
+        COMMON: {
+            ENABLE: '启用',
+            CANCEL: '取消',
+        },
+
         SAVE_BAR: {
             DIRTY: '⚠️ 未保存的更改',
             CLEAN: '✓ 所有更改已保存',
@@ -87,6 +92,8 @@ export const zhCN = {
             SYNC_COLOR_SCHEMES_HINT: '自定义终端配色方案',
             SYNC_VAULT: '加密密码库与凭证 (Vault)',
             SYNC_VAULT_HINT: '已保存的密码、私钥及敏感令牌',
+            VAULT_CONFIRM_TITLE: 'Vault 密码库同步',
+            VAULT_CONFIRM_DETAIL: '注意：Vault 同步会整体同步加密密码库。若其他设备已配置其他密码库，同步时将提示选择主版本。建议在首次同步前确保所有凭据已在主设备上录入。',
 
             AUTOMATION_TITLE: '自动同步与触发时机',
             AUTOMATION_ENABLE: '启用自动同步',
@@ -210,6 +217,18 @@ export const zhCN = {
             SYNC_FAILED: '同步失败：{err}',
             UPLOAD_REMOTE_SUCCESS: '已将 {filename} 上传至远程 /backups/ 目录！',
             DISASTER_RECOVERY_AVAILABLE: '灾难恢复：未检测到连接配置，但在 设置 -> Sync & Backup 中有 {count} 个可用快照！',
+            VAULT_KEPT_LOCAL: '已保留本地 Vault 作为主版本。',
+            VAULT_ADOPTED_REMOTE: '已从设备 {device} 更新 Vault。',
+            VAULT_SYNC_DISABLED_NOTICE: 'Vault 同步已禁用。重新启用前请检查“设置 -> Vault”中的密钥。',
+            VAULT_CONFLICT_BACKGROUND: '检测到与 {device} 的 Vault 冲突。请运行手动同步进行解决。',
+        },
+
+        CONFLICT: {
+            VAULT_TITLE: '检测到 Vault 冲突',
+            VAULT_DETAIL: '在当前计算机 ({localDevice}) 与远程设备 ({remoteDevice}) 发现了不同版本的加密密码库。\n\n请选择操作：',
+            VAULT_KEEP_LOCAL: '保留本地 Vault ({device})',
+            VAULT_ADOPT_REMOTE: '采用远程 Vault ({device})',
+            VAULT_ABORT_AND_DISABLE: '取消（禁用 Vault 同步）',
         },
 
         TOOLBAR: {

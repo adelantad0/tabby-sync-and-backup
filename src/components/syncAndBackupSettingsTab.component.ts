@@ -395,7 +395,7 @@ interface UpdateInfo {
                             type="checkbox"
                             id="syncVaultCheck"
                             [checked]="formData.syncVault"
-                            (change)="onFieldChange('syncVault', $any($event.target).checked)"
+                            (change)="onToggleSyncVault($any($event.target).checked)"
                         />
                         <label class="form-check-label fw-bold" for="syncVaultCheck">
                             {{ t('SYNC_BACKUP.SYNC.SYNC_VAULT') }}
@@ -1710,6 +1710,29 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             return !!(this.formData.localSyncPath && this.formData.localSyncPath.trim())
         }
         return false
+    }
+
+    async onToggleSyncVault(checked: boolean): Promise<void> {
+        if (checked) {
+            const res = await this.platform.showMessageBox({
+                type: 'warning',
+                message: this.t('SYNC_BACKUP.SYNC.VAULT_CONFIRM_TITLE'),
+                detail: this.t('SYNC_BACKUP.SYNC.VAULT_CONFIRM_DETAIL'),
+                buttons: [
+                    this.t('SYNC_BACKUP.COMMON.ENABLE'),
+                    this.t('SYNC_BACKUP.COMMON.CANCEL'),
+                ],
+                defaultId: 0,
+                cancelId: 1,
+            })
+            if (res.response !== 0) {
+                this.formData.syncVault = false
+                const el = document.getElementById('syncVaultCheck') as HTMLInputElement
+                if (el) el.checked = false
+                return
+            }
+        }
+        this.onFieldChange('syncVault', checked)
     }
 
     onFieldChange(field: string, value: any): void {

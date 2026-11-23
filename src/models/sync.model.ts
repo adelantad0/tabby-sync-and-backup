@@ -96,6 +96,18 @@ export interface SyncClusterRegistry {
 }
 
 /**
+ * Conflict information for Tabby Vault
+ */
+export interface VaultConflictInfo {
+    localDeviceName: string
+    remoteDeviceId: string
+    remoteDeviceName: string
+    localUpdatedAt?: string
+    remoteUpdatedAt?: string
+    remoteVault: SyncVaultState
+}
+
+/**
  * Merge outcome summary for reporting and UI feedback
  */
 export interface SyncMergeResult {
@@ -107,6 +119,7 @@ export interface SyncMergeResult {
     groupsUpdated: number
     groupsDeleted: number
     vaultUpdated: boolean
+    vaultConflict?: VaultConflictInfo
     themesUpdated: number
 }
 

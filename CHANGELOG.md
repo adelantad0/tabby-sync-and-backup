@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-11-24
+
+### Added
+- **Vault Sync Confirmation & Interactive Conflict Resolution**:
+  - **Enable Confirmation Dialog**: Toggling on `Sync Vault` in settings now prompts a warning dialog clarifying that the vault is synchronized as an encrypted whole, allowing users to cancel before turning on.
+  - **Interactive Conflict Resolver**: When two devices have independent or concurrent Vault states (`rev: 1` vs `rev: 1` with different hashes), manual sync prompts a dialog to choose whether to keep local, adopt remote, or cancel.
+  - **Safe Abort on Conflict**: If the user cancels the conflict dialog, `syncVault` is automatically disabled (`false`) without mutating the local vault, allowing the user to safely inspect their secrets in Settings -> Vault.
+  - **Accurate Vault Timestamps**: Fixed an issue where `updatedAt` for vault was updated on every state build; it is now preserved unless the vault content hash actually changes.
+
 ## [0.6.6] - 2026-11-23
 
 ### Added

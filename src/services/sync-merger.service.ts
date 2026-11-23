@@ -196,16 +196,20 @@ export class SyncMergerService {
 
                 let vaultRev = 1
                 let vaultBaseRev = 0
+                let vaultUpdatedAt = new Date().toISOString()
 
                 if (!prevVault) {
                     vaultRev = 1
                     vaultBaseRev = 0
+                    vaultUpdatedAt = new Date().toISOString()
                 } else if (prevVault.contentHash === vaultHash && prevVault.enabled) {
                     vaultRev = prevVault.rev || 1
                     vaultBaseRev = prevVault.baseRev || 0
+                    vaultUpdatedAt = prevVault.updatedAt || new Date().toISOString()
                 } else {
                     vaultRev = (prevVault.rev || 1) + 1
                     vaultBaseRev = prevVault.rev || 1
+                    vaultUpdatedAt = new Date().toISOString()
                 }
 
                 vaultState = {
@@ -213,7 +217,7 @@ export class SyncMergerService {
                     rev: vaultRev,
                     baseRev: vaultBaseRev,
                     contentHash: vaultHash,
-                    updatedAt: new Date().toISOString(),
+                    updatedAt: vaultUpdatedAt,
                     data: {
                         version: rawVault.version || 1,
                         contents: rawVault.contents,
@@ -513,9 +517,13 @@ export class SyncMergerService {
                     const localRev = localVaultEntry?.rev || 1
                     const remoteRev = remoteVault.rev || 1
 
-                    if (remoteRev > localRev) {
+                    const localBase = localVaultEntry?.baseRev || 0
+                    const remoteBase = remoteVault.baseRev || 0
+
+                    if (remoteRev > localRev && remoteBase >= localRev) {
+                        // Fast-forward: remote is strictly newer ancestor
                         console.log(
-                            `[tabby-sync-and-backup] Remote vault from "${peerState.deviceName || peerState.deviceId}" is newer (rev ${remoteRev} > ${localRev}). Updating local vault.`
+                            `[tabby-sync-and-backup] Remote vault from "${peerState.deviceName || peerState.deviceId}" is newer ancestor (rev ${remoteRev} > ${localRev}). Updating local vault.`
                         )
                         this.config.store.vault = {
                             version: remoteData.version || 1,
@@ -530,31 +538,23 @@ export class SyncMergerService {
                         }
                         mergedState.vault = { ...remoteVault }
                         result.vaultUpdated = true
-                    } else if (localRev > remoteRev) {
+                    } else if (localRev > remoteRev && localBase >= remoteRev) {
+                        // Fast-forward: local is strictly newer ancestor, keep local
                         console.log(
-                            `[tabby-sync-and-backup] Local vault is newer than peer "${peerState.deviceName || peerState.deviceId}" (local rev ${localRev} > remote rev ${remoteRev}). Keeping local.`
+                            `[tabby-sync-and-backup] Local vault is newer ancestor than peer "${peerState.deviceName || peerState.deviceId}" (local rev ${localRev} > remote rev ${remoteRev}). Keeping local.`
                         )
                     } else {
-                        // Concurrent conflict with equal revision, compare timestamps
-                        const localTime = new Date(localVaultEntry?.updatedAt || 0).getTime()
-                        const remoteTime = new Date(remoteVault.updatedAt || 0).getTime()
-                        if (remoteTime > localTime) {
-                            console.log(
-                                `[tabby-sync-and-backup] Remote vault from "${peerState.deviceName || peerState.deviceId}" has newer timestamp. Updating local vault.`
-                            )
-                            this.config.store.vault = {
-                                version: remoteData.version || 1,
-                                contents: remoteData.contents,
-                                keySalt: remoteData.keySalt,
-                                iv: remoteData.iv,
-                            }
-                            try {
-                                this.vault?.setStore(this.config.store.vault)
-                            } catch (e) {
-                                console.warn('[tabby-sync-and-backup] Could not update runtime vault store:', e)
-                            }
-                            mergedState.vault = { ...remoteVault }
-                            result.vaultUpdated = true
+                        // Concurrent conflict (independent initial vaults or parallel offline edits)
+                        console.warn(
+                            `[tabby-sync-and-backup] Vault conflict detected with peer "${peerState.deviceName || peerState.deviceId}". Local rev ${localRev}, Remote rev ${remoteRev}.`
+                        )
+                        result.vaultConflict = {
+                            localDeviceName: localState.deviceName,
+                            remoteDeviceId: peerState.deviceId,
+                            remoteDeviceName: peerState.deviceName || peerState.deviceId,
+                            localUpdatedAt: localVaultEntry?.updatedAt,
+                            remoteUpdatedAt: remoteVault.updatedAt,
+                            remoteVault,
                         }
                     }
                 }
