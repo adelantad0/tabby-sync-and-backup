@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+
+### Added
+- **Official Documentation Website (VitePress)**:
+  - Launched static documentation website hosted on GitHub Pages (`https://adelantad0.github.io/tabby-sync-and-backup/`).
+  - Native tri-lingual localization across English, Russian, and Simplified Chinese with instant switcher.
+  - Custom visual aesthetic inspired by [tabby.sh](https://tabby.sh/) with Inter & JetBrains Mono fonts and glowing purple-indigo styling.
+  - Comprehensive user guides: Getting Started, How Sync Works (Device-Per-File architecture), Security & E2EE (AES-256-GCM + PBKDF2), Storage Providers (WebDAV, Local Cloud Folders), and Backups & 1-Click Recovery.
+- **In-App Documentation Access**:
+  - Added dedicated `🌐 Documentation` button in the plugin's **Settings -> About** tab.
+  - Added localized translation keys (`SYNC_BACKUP.ABOUT.DOCUMENTATION`) for English, Russian, and Simplified Chinese.
+- **Automated Deployment CI/CD**:
+  - Added GitHub Actions workflow (`deploy-docs.yml`) for automatic site building and deployment upon push.
+- **Badges and Metadata**:
+  - Added documentation and npm status badges across `README.md`, `README.ru-RU.md`, and `README.zh-CN.md`.
+  - Updated `homepage` in `package.json` to point directly to the documentation website.
+
 ## [0.5.2] - 2026-11-22
 
 ### Fixed
