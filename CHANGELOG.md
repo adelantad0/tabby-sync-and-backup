@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Native Tabby Vault & "Encrypt config file" Full Compatibility**:
+  - Removed intrusive `store.encrypted = false` mutation and startup `config.save()` call from `SyncEngineService.init()`, eliminating the recursive `configChangeBroadcast$` reload race condition that triggered duplicate passphrase dialogs and caused Tabby to crash with `TypeError: ... Received undefined`.
+  - Removed root `encrypted: true` stripping from `sanitizeConfigYaml`, `restoreLocalBackup`, and `restoreRemoteBackup`, allowing Tabby's native full-config encryption to coexist seamlessly with the plugin.
+
 ## [0.6.2] - 2026-11-23
 
 ### Fixed

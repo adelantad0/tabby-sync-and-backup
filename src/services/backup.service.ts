@@ -160,16 +160,12 @@ export class BackupService {
 
     /**
      * Sanitize raw configuration YAML before saving backup or restoring.
-     * Prevents Tabby from bricking on startup by stripping dangerous root-level `encrypted: true`
-     * which causes Tabby's unhandled startup decryption crash when passphrase is not in keychain.
+     * Cleans accidental null bytes while preserving Tabby's native structure.
      */
     sanitizeConfigYaml(rawYaml: string): string {
         if (!rawYaml || typeof rawYaml !== 'string') return ''
-        // Strip root-level `encrypted: true` (only at start of line, not indented inside nested properties)
-        let cleaned = rawYaml.replace(/^encrypted:\s*true\s*(\r?\n|$)/gm, '')
         // Clean any accidental null bytes
-        cleaned = cleaned.replace(/\0/g, '')
-        return cleaned
+        return rawYaml.replace(/\0/g, '')
     }
 
     async createLocalBackup(
@@ -275,9 +271,6 @@ export class BackupService {
         if (customPassword) {
             this.config.store.syncAndBackup.encryptionPassword = customPassword
             this.config.store.syncAndBackup.encryptionEnabled = true
-        }
-        if (this.config.store.encrypted) {
-            this.config.store.encrypted = false
         }
         await this.config.save()
     }
@@ -546,9 +539,6 @@ export class BackupService {
         if (customPassword) {
             this.config.store.syncAndBackup.encryptionPassword = customPassword
             this.config.store.syncAndBackup.encryptionEnabled = true
-        }
-        if (this.config.store.encrypted) {
-            this.config.store.encrypted = false
         }
         await this.config.save()
     }
