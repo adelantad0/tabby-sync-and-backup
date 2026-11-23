@@ -1,4 +1,4 @@
-import { Component, HostBinding, OnInit } from '@angular/core'
+import { ChangeDetectorRef, Component, HostBinding, OnInit } from '@angular/core'
 import { AppService, ConfigService, HostAppService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
 import { SettingsTabComponent } from 'tabby-settings'
 import { BackupService, BackupSnapshotItem, RemoteBackupDeviceItem } from '../services/backup.service'
@@ -395,7 +395,7 @@ interface UpdateInfo {
                             type="checkbox"
                             id="syncVaultCheck"
                             [checked]="formData.syncVault"
-                            (change)="onToggleSyncVault($any($event.target).checked)"
+                            (change)="onToggleSyncVault($event)"
                         />
                         <label class="form-check-label fw-bold" for="syncVaultCheck">
                             {{ t('SYNC_BACKUP.SYNC.SYNC_VAULT') }}
@@ -1575,6 +1575,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         public syncEngine: SyncEngineService,
         public translate: TranslateService,
         private app: AppService,
+        private cdr: ChangeDetectorRef,
     ) {
         registerTranslations(this.translate)
     }
@@ -1592,6 +1593,17 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
 
     async ngOnInit(): Promise<void> {
         this.resetForm()
+        if (this.config.changed$) {
+            this.config.changed$.subscribe(() => {
+                if (this.config.store?.syncAndBackup) {
+                    const currentSyncVault = !!this.config.store.syncAndBackup.syncVault
+                    if (this.formData.syncVault !== currentSyncVault) {
+                        this.formData.syncVault = currentSyncVault
+                        this.cdr.detectChanges()
+                    }
+                }
+            })
+        }
         this.loadLocalChangelog()
         this.refreshChangelog().catch(() => null)
         await this.loadLocalBackups()
@@ -1712,7 +1724,8 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         return false
     }
 
-    async onToggleSyncVault(checked: boolean): Promise<void> {
+    async onToggleSyncVault(event: any): Promise<void> {
+        const checked = !!event?.target?.checked
         if (checked) {
             const res = await this.platform.showMessageBox({
                 type: 'warning',
@@ -1727,8 +1740,13 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
             })
             if (res.response !== 0) {
                 this.formData.syncVault = false
-                const el = document.getElementById('syncVaultCheck') as HTMLInputElement
-                if (el) el.checked = false
+                if (event?.target) event.target.checked = false
+                setTimeout(() => {
+                    this.formData.syncVault = false
+                    const el = document.getElementById('syncVaultCheck') as HTMLInputElement
+                    if (el) el.checked = false
+                    this.cdr.detectChanges()
+                }, 0)
                 return
             }
         }
@@ -1788,10 +1806,15 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
     async triggerSyncNow(): Promise<void> {
         try {
             await this.syncEngine.syncNow(true)
-            await this.loadClusterDevices()
-            await this.loadLocalBackups()
         } catch (e) {
             // Error notification handled in syncEngine
+        } finally {
+            if (this.config.store?.syncAndBackup) {
+                this.formData.syncVault = !!this.config.store.syncAndBackup.syncVault
+            }
+            await this.loadClusterDevices()
+            await this.loadLocalBackups()
+            this.cdr.detectChanges()
         }
     }
 

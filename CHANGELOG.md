@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.8] - 2026-11-24
+
+### Fixed
+- **Instant UI Switch State Sync on Conflict Cancel & Toggle Abort**:
+  - Injected `ChangeDetectorRef` and added live subscription to `config.changed$` so that when Vault sync is aborted during conflict resolution, `formData.syncVault` is immediately set to `false` and the switch unchecks in the UI in real time.
+  - Fixed `triggerSyncNow()` to refresh `formData.syncVault` from the updated config in its `finally` block and trigger change detection.
+  - Enhanced `onToggleSyncVault()` with explicit event target state reset and timeout tick so cancelling the enable confirmation dialog reliably keeps the toggle switch in the OFF position.
+
 ## [0.6.7] - 2026-11-24
 
 ### Added
