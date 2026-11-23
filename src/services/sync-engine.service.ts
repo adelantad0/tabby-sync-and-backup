@@ -54,7 +54,7 @@ export class SyncEngineService {
         // Disaster Recovery Check: If profiles are completely empty (e.g. after Erase config), notify about available backups
         setTimeout(async () => {
             try {
-                const profiles = (this.config.store.profiles || []).filter((p: any) => !p.isBuiltin)
+                const profiles = (this.config.store?.profiles || []).filter((p: any) => !p.isBuiltin)
                 if (profiles.length === 0) {
                     const snapshots = await this.backupService.listLocalBackups()
                     if (snapshots.length > 0) {

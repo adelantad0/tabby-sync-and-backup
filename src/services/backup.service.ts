@@ -208,10 +208,9 @@ export class BackupService {
         const maxToKeep = this.config.store?.syncAndBackup?.maxBackupsToKeep || 10
         await this.rotateLocalBackups(maxToKeep)
 
-        // Update last backup timestamp
+        // Update last backup timestamp in-memory without triggering an unneeded config file resave
         if (this.config.store?.syncAndBackup) {
             this.config.store.syncAndBackup.lastBackupAt = now.getTime()
-            await this.config.save()
         }
 
         return snapshot

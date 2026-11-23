@@ -9,7 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.4] - 2026-11-23
+## [0.6.5] - 2026-11-23
+
+### Fixed
+- **Resolved Fatal Boot Race Condition With Native Tabby Config Encryption**:
+  - **Awaited `config.ready$`**: `SyncAndBackupModule` now subscribes to `this.config.ready$.toPromise()` before starting `SyncEngineService`. Previously, the module constructor initialized `SyncEngineService` synchronously during Angular bootstrap before Tabby core had completed decryption and populated `config.store`.
+  - **Eliminated Config Store Clobbering**: Removed `this.ensureConfigRoot()` which assigned `this.config.store = {}` when accessed prior to config readiness, destroying Tabby's native `ConfigProxy` and corrupting the vault decryption flow.
+  - **Removed Background `config.save()` on Local Backups**: Removed `await this.config.save()` from `createLocalBackup()`. Updating `lastBackupAt` is now strictly in-memory and does not write to `config.yaml` on disk, preventing `hostApp.configChangeBroadcast$` from triggering redundant `config.load()` cycles that asked for the passphrase twice and failed with `Received undefined`.
+  - **Transient Device Identity**: `DeviceIdentityService` now uses a stable transient UUID if queried before Tabby's store is ready, eliminating all premature mutations.
 
 ### Fixed
 - **Root Cause of Duplicate Startup Passphrase & Decryption Crash**:

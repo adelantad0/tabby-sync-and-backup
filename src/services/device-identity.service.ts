@@ -9,6 +9,8 @@ import * as os from 'os'
  */
 @Injectable({ providedIn: 'root' })
 export class DeviceIdentityService {
+    private transientDeviceId?: string
+
     constructor(private config: ConfigService) {}
 
     /**
@@ -17,11 +19,14 @@ export class DeviceIdentityService {
     getDeviceId(): string {
         let deviceId = this.config.store?.syncAndBackup?.deviceId
         if (!deviceId) {
-            deviceId = this.generateUuid()
-            this.ensureConfigRoot()
+            if (!this.config.store?.syncAndBackup) {
+                if (!this.transientDeviceId) {
+                    this.transientDeviceId = this.generateUuid()
+                }
+                return this.transientDeviceId
+            }
+            deviceId = this.transientDeviceId || this.generateUuid()
             this.config.store.syncAndBackup.deviceId = deviceId
-            // Do NOT call this.config.save() here! Passive getters must never trigger config saves
-            // during Tabby initialization, as saving triggers configChangeBroadcast$ reloads.
         }
         return deviceId
     }
@@ -43,9 +48,10 @@ export class DeviceIdentityService {
      */
     async setDeviceName(name: string): Promise<void> {
         const cleanName = (name || '').trim() || this.detectDefaultDeviceName()
-        this.ensureConfigRoot()
-        this.config.store.syncAndBackup.deviceName = cleanName
-        await this.config.save()
+        if (this.config.store?.syncAndBackup) {
+            this.config.store.syncAndBackup.deviceName = cleanName
+            await this.config.save()
+        }
     }
 
     /**
@@ -113,14 +119,5 @@ export class DeviceIdentityService {
             return JSON.stringify(key) + ':' + this.canonicalStringify(obj[key])
         })
         return '{' + keyValPairs.join(',') + '}'
-    }
-
-    private ensureConfigRoot(): void {
-        if (!this.config.store) {
-            this.config.store = {}
-        }
-        if (!this.config.store.syncAndBackup) {
-            this.config.store.syncAndBackup = {}
-        }
     }
 }

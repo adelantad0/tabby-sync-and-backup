@@ -8,6 +8,7 @@ import {
     HotkeyProvider,
     HotkeyDescription,
     ConfigProvider,
+    ConfigService,
     AppService,
     TranslateService,
 } from 'tabby-core'
@@ -186,10 +187,21 @@ export default class SyncAndBackupModule {
     constructor(
         private syncEngine: SyncEngineService,
         private translate: TranslateService,
+        private config: ConfigService,
     ) {
         registerTranslations(this.translate)
-        console.log('[tabby-sync-and-backup] Plugin initialized successfully in Tabby!')
-        this.syncEngine.init()
+        console.log('[tabby-sync-and-backup] Plugin loaded. Awaiting config.ready$ before initializing services...')
+
+        const onConfigReady = () => {
+            console.log('[tabby-sync-and-backup] Tabby config is ready and unlocked. Initializing SyncEngineService.')
+            this.syncEngine.init()
+        }
+
+        if (this.config.ready$ && typeof this.config.ready$.toPromise === 'function') {
+            this.config.ready$.toPromise().then(onConfigReady).catch(() => onConfigReady())
+        } else {
+            setTimeout(onConfigReady, 1000)
+        }
     }
 }
 
