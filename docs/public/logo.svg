@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#090d16" />
+    </linearGradient>
+    <linearGradient id="tabbyAccent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa" />
+      <stop offset="50%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.05" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container -->
+  <rect x="10" y="10" width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="#312e81" stroke-width="2.5" />
+
+  <!-- Inner Soft Glow -->
+  <circle cx="100" cy="100" r="60" fill="#7c3aed" opacity="0.15" filter="url(#glow)" />
+
+  <!-- Shield / Security Base -->
+  <path d="M100 38 L146 56 C146 102 124 138 100 156 C76 138 54 102 54 56 Z" 
+        fill="url(#shieldGrad)" stroke="url(#tabbyAccent)" stroke-width="3" stroke-linejoin="round" />
+
+  <!-- Sync Circular Arrows -->
+  <path d="M78 88 A28 28 0 0 1 126 80" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" />
+  <polyline points="120,72 128,80 120,88" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+  <path d="M122 112 A28 28 0 0 1 74 120" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" />
+  <polyline points="80,128 72,120 80,112" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Center Keyhole / Lock Dot -->
+  <circle cx="100" cy="100" r="4.5" fill="#f8fafc" />
+</svg>

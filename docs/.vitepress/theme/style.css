@@ -1,0 +1,110 @@
+/* Google Fonts: Inter and JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --vp-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --vp-font-family-mono: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
+
+  /* Brand Colors - Tabby inspired purple & indigo */
+  --vp-c-brand-1: #8b5cf6;
+  --vp-c-brand-2: #7c3aed;
+  --vp-c-brand-3: #6d28d9;
+  --vp-c-brand-soft: rgba(139, 92, 246, 0.16);
+
+  /* Hero gradients */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #a78bfa 25%, #38bdf8 85%);
+  --vp-home-hero-image-filter: drop-shadow(0 0 45px rgba(139, 92, 246, 0.35));
+}
+
+/* Tabby-style Dark Theme */
+.dark {
+  --vp-c-bg: #0d1117;
+  --vp-c-bg-soft: #161b22;
+  --vp-c-bg-alt: #1c2128;
+  --vp-c-bg-elv: #21262d;
+
+  --vp-c-border: #30363d;
+  --vp-c-divider: #21262d;
+  --vp-c-gutter: #161b22;
+
+  --vp-c-text-1: #f0f6fc;
+  --vp-c-text-2: #8b949e;
+  --vp-c-text-3: #6e7681;
+
+  --vp-c-brand-1: #a78bfa;
+  --vp-c-brand-2: #8b5cf6;
+  --vp-c-brand-3: #7c3aed;
+  --vp-c-brand-soft: rgba(139, 92, 246, 0.18);
+}
+
+/* Hero Badge & Buttons */
+.VPHomeHero .action .VPButton.brand {
+  background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%);
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35);
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.VPHomeHero .action .VPButton.brand:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 6px 28px rgba(139, 92, 246, 0.55);
+  transform: translateY(-1px);
+}
+
+.VPHomeHero .action .VPButton.alt {
+  background-color: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-border);
+  font-weight: 600;
+}
+
+.VPHomeHero .action .VPButton.alt:hover {
+  border-color: var(--vp-c-brand-1);
+  background-color: var(--vp-c-bg-alt);
+}
+
+/* Feature Cards with Tabby border glow */
+.VPFeature {
+  border: 1px solid var(--vp-c-border) !important;
+  background-color: var(--vp-c-bg-soft) !important;
+  border-radius: 14px !important;
+  transition: all 0.3s ease !important;
+}
+
+.VPFeature:hover {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 8px 30px rgba(124, 58, 237, 0.12);
+  transform: translateY(-2px);
+}
+
+.VPFeature .icon {
+  background-color: var(--vp-c-bg-alt) !important;
+  border-radius: 10px;
+}
+
+/* Custom Callout / Shield Alert box */
+.security-callout {
+  margin: 20px 0;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(56, 189, 248, 0.08) 100%);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 12px;
+  position: relative;
+}
+
+.security-callout h4 {
+  margin: 0 0 8px 0;
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.security-callout p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--vp-c-text-1);
+}

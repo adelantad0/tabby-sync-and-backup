@@ -12,6 +12,8 @@ jspm_packages/
 dist/
 build/
 out/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 *.tsbuildinfo
 
 # Logs & debugging
