@@ -51,6 +51,28 @@ export class SyncEngineService {
 
         console.log('[tabby-sync-and-backup] SyncEngineService initializing...')
 
+        // Sanity Check: If Tabby native store.encrypted is true, disable it to prevent startup crash loop
+        if (this.config.store?.encrypted) {
+            console.warn('[tabby-sync-and-backup] Detected native store.encrypted=true flag. Resetting to false to prevent startup loop.')
+            this.config.store.encrypted = false
+            this.config.save().catch(e => console.warn('Could not save sanitized config:', e))
+        }
+
+        // Disaster Recovery Check: If profiles are completely empty (e.g. after Erase config), notify about available backups
+        setTimeout(async () => {
+            try {
+                const profiles = (this.config.store.profiles || []).filter((p: any) => !p.isBuiltin)
+                if (profiles.length === 0) {
+                    const snapshots = await this.backupService.listLocalBackups()
+                    if (snapshots.length > 0) {
+                        this.notifications.notice(this.translate.instant('SYNC_BACKUP.NOTIFICATIONS.DISASTER_RECOVERY_AVAILABLE', { count: snapshots.length }))
+                    }
+                }
+            } catch (e) {
+                // Ignore background check error
+            }
+        }, 2500)
+
         // 1. Startup sync trigger (delayed by 4 seconds to allow Tabby UI to settle)
         setTimeout(() => {
             const cfg = this.config.store?.syncAndBackup

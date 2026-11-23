@@ -138,6 +138,9 @@ export const zhCN = {
             MODAL_PASSWORD_TITLE: '输入快照主密码',
             MODAL_PASSWORD_DESC: '此备份快照已加密。请输入创建此快照时所使用的主密码：',
             MODAL_SUBMIT: '解密并恢复',
+            DISASTER_RECOVERY_TITLE: '灾难恢复：检测到空配置',
+            DISASTER_RECOVERY_DESC: '当前活动配置中没有连接配置，但磁盘上存在 {count} 个备份快照。',
+            QUICK_RESTORE_LATEST: '恢复最新快照',
         },
 
         SECURITY: {
@@ -206,6 +209,7 @@ export const zhCN = {
             SYNC_UP_TO_DATE: '同步完成：已是最新状态！',
             SYNC_FAILED: '同步失败：{err}',
             UPLOAD_REMOTE_SUCCESS: '已将 {filename} 上传至远程 /backups/ 目录！',
+            DISASTER_RECOVERY_AVAILABLE: '灾难恢复：未检测到连接配置，但在 设置 -> Sync & Backup 中有 {count} 个可用快照！',
         },
 
         TOOLBAR: {

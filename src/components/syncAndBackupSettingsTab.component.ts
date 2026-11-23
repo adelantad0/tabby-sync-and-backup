@@ -634,6 +634,23 @@ interface UpdateInfo {
 
         <!-- ==================== TAB 2: BACKUPS ==================== -->
         <div [class.d-none]="activeTab !== 'backups'">
+            <!-- Disaster Recovery Banner (When active config is empty but snapshots exist) -->
+            <div class="card border-danger mb-3" *ngIf="hasNoProfiles() && localBackups.length > 0">
+                <div class="card-body bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold text-danger">⚠️ {{ t('SYNC_BACKUP.BACKUPS.DISASTER_RECOVERY_TITLE') }}</div>
+                        <div class="small text-muted">{{ t('SYNC_BACKUP.BACKUPS.DISASTER_RECOVERY_DESC', { count: localBackups.length }) }}</div>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn btn-danger fw-bold"
+                        (click)="restoreLocalBackup(localBackups[0])"
+                    >
+                        🚑 {{ t('SYNC_BACKUP.BACKUPS.QUICK_RESTORE_LATEST') }}
+                    </button>
+                </div>
+            </div>
+
             <!-- Optional Inline Prompt for Historic Backup Password -->
             <div class="card border-warning mb-3" [class.d-none]="!promptRestoreSnapshot">
                 <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
@@ -1891,6 +1908,11 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         if (this.newPasswordInput !== this.confirmPasswordInput) return false
         if (this.hasSavedPassword && !this.oldPasswordInput) return false
         return true
+    }
+
+    hasNoProfiles(): boolean {
+        const list = (this.config.store?.profiles || []).filter((p: any) => !p.isBuiltin)
+        return list.length === 0
     }
 
     async applyPasswordUpdate(): Promise<void> {

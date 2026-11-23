@@ -158,6 +158,20 @@ export class BackupService {
         return snapshots
     }
 
+    /**
+     * Sanitize raw configuration YAML before saving backup or restoring.
+     * Prevents Tabby from bricking on startup by stripping dangerous root-level `encrypted: true`
+     * which causes Tabby's unhandled startup decryption crash when passphrase is not in keychain.
+     */
+    sanitizeConfigYaml(rawYaml: string): string {
+        if (!rawYaml || typeof rawYaml !== 'string') return ''
+        // Strip root-level `encrypted: true` (only at start of line, not indented inside nested properties)
+        let cleaned = rawYaml.replace(/^encrypted:\s*true\s*(\r?\n|$)/gm, '')
+        // Clean any accidental null bytes
+        cleaned = cleaned.replace(/\0/g, '')
+        return cleaned
+    }
+
     async createLocalBackup(
         trigger: BackupTrigger = 'Manual',
         overridePassword?: string,
@@ -167,8 +181,8 @@ export class BackupService {
         const filename = generateBackupFilename(now, trigger)
         const fullPath = path.join(dir, filename)
 
-        // Read active raw configuration
-        let payload = this.config.readRaw()
+        // Read active raw configuration and sanitize
+        let payload = this.sanitizeConfigYaml(this.config.readRaw())
         const isEncrypted = !!this.config.store?.syncAndBackup?.encryptionEnabled
         const password = overridePassword || this.config.store?.syncAndBackup?.encryptionPassword
 
@@ -230,6 +244,9 @@ export class BackupService {
             }
         }
 
+        // Sanitize target YAML to prevent rogue root-level encrypted: true from bricking Tabby startup
+        targetConfigYaml = this.sanitizeConfigYaml(targetConfigYaml)
+
         // 1. Capture current plugin configuration so restoring an older Tabby snapshot
         // never erases the user's master encryption password or sync targets.
         const currentPluginConfig = this.config.store?.syncAndBackup
@@ -247,14 +264,22 @@ export class BackupService {
         await this.config.writeRaw(targetConfigYaml)
         await this.config.load()
 
-        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist
-        if (currentPluginConfig) {
-            if (!this.config.store.syncAndBackup) {
-                this.config.store.syncAndBackup = {}
-            }
-            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
-            await this.config.save()
+        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist.
+        // If config was previously wiped, re-inject customPassword so future syncs/restores don't fail.
+        if (!this.config.store.syncAndBackup) {
+            this.config.store.syncAndBackup = {}
         }
+        if (currentPluginConfig) {
+            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
+        }
+        if (customPassword) {
+            this.config.store.syncAndBackup.encryptionPassword = customPassword
+            this.config.store.syncAndBackup.encryptionEnabled = true
+        }
+        if (this.config.store.encrypted) {
+            this.config.store.encrypted = false
+        }
+        await this.config.save()
     }
 
     async deleteLocalBackup(filename: string): Promise<void> {
@@ -490,6 +515,9 @@ export class BackupService {
             }
         }
 
+        // Sanitize target YAML to prevent rogue root-level encrypted: true from bricking Tabby startup
+        targetConfigYaml = this.sanitizeConfigYaml(targetConfigYaml)
+
         // 1. Capture current plugin configuration so restoring an older Tabby snapshot
         // never erases the user's master encryption password or sync targets.
         const currentPluginConfig = this.config.store?.syncAndBackup
@@ -507,14 +535,22 @@ export class BackupService {
         await this.config.writeRaw(targetConfigYaml)
         await this.config.load()
 
-        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist
-        if (currentPluginConfig) {
-            if (!this.config.store.syncAndBackup) {
-                this.config.store.syncAndBackup = {}
-            }
-            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
-            await this.config.save()
+        // 4. Preserve current syncAndBackup configuration so encryption keys & credentials persist.
+        // If config was previously wiped, re-inject customPassword so future syncs/restores don't fail.
+        if (!this.config.store.syncAndBackup) {
+            this.config.store.syncAndBackup = {}
         }
+        if (currentPluginConfig) {
+            Object.assign(this.config.store.syncAndBackup, currentPluginConfig)
+        }
+        if (customPassword) {
+            this.config.store.syncAndBackup.encryptionPassword = customPassword
+            this.config.store.syncAndBackup.encryptionEnabled = true
+        }
+        if (this.config.store.encrypted) {
+            this.config.store.encrypted = false
+        }
+        await this.config.save()
     }
 
     async deleteRemoteBackup(itemOrFilename: BackupSnapshotItem | string, deviceId?: string): Promise<void> {

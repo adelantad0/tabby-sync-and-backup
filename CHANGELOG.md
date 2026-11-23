@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-23
+
+### Fixed
+- **Startup Crash Loop & Rogue Config Encryption Protection**:
+  - Automatically detect and neutralize Tabby's native `store.encrypted=true` flag on plugin initialization to prevent Tabby from bricking with an unhandled `TypeError [ERR_INVALID_ARG_TYPE] (Received undefined)` startup crash loop when passphrase prompt is cancelled or keychain is unavailable.
+  - Added YAML sanitization (`sanitizeConfigYaml`) across all local and remote snapshot creations and restores to guarantee root-level `encrypted: true` flags are stripped before writing to `config.yaml`.
+  - Added strict parameter validation in `CryptoService` (`isEncrypted`, `encrypt`, `decrypt`, `checkPassword`, `parseContainer`) ensuring non-string, `null`, or `undefined` inputs throw clean typed errors instead of crashing Node.js runtime crypto primitives.
+  - Automatically persist user-entered restore passwords into `config.store.syncAndBackup` so restoring from an empty/erased config preserves master encryption keys without requiring manual reconfiguration.
+
+### Added
+- **Disaster Recovery UI & Automated Notification**:
+  - Added prominent Disaster Recovery banner in the **Backups** tab (`Settings -> Sync & Backup -> Backups`) when active configuration has 0 profiles but historical snapshots exist on disk, featuring a one-click `🚑 Quick Restore Latest Snapshot` action.
+  - Emitted automatic startup recovery notifications when empty profile sets are detected after application reset or "Erase config".
+  - Synchronized new translation keys across English, Russian, and Simplified Chinese dictionaries.
+
 ## [0.6.1] - 2026-11-23
 
 ### Changed

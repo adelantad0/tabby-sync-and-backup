@@ -138,6 +138,9 @@ export const en = {
             MODAL_PASSWORD_TITLE: 'Enter Master Password for Snapshot',
             MODAL_PASSWORD_DESC: 'This backup snapshot is encrypted. Enter the master password used when this snapshot was created:',
             MODAL_SUBMIT: 'Decrypt & Restore',
+            DISASTER_RECOVERY_TITLE: 'Disaster Recovery: Empty Configuration Detected',
+            DISASTER_RECOVERY_DESC: 'No profiles were found in your active configuration, but {count} backup snapshot(s) are available on disk.',
+            QUICK_RESTORE_LATEST: 'Restore Latest Snapshot',
         },
 
         SECURITY: {
@@ -206,6 +209,7 @@ export const en = {
             SYNC_UP_TO_DATE: 'Sync completed: Everything is up to date!',
             SYNC_FAILED: 'Sync failed: {err}',
             UPLOAD_REMOTE_SUCCESS: 'Uploaded {filename} to remote /backups/!',
+            DISASTER_RECOVERY_AVAILABLE: 'Disaster Recovery: No profiles found, but {count} backup snapshot(s) are available in Settings -> Sync & Backup!',
         },
 
         TOOLBAR: {

@@ -138,6 +138,9 @@ export const ru = {
             MODAL_PASSWORD_TITLE: 'Введите мастер-пароль для бэкапа',
             MODAL_PASSWORD_DESC: 'Эта резервная копия зашифрована. Введите мастер-пароль, действовавший на момент её создания:',
             MODAL_SUBMIT: 'Расшифровать и восстановить',
+            DISASTER_RECOVERY_TITLE: 'Аварийное восстановление: обнаружена пустая конфигурация',
+            DISASTER_RECOVERY_DESC: 'В текущей конфигурации нет профилей, но на диске обнаружено резервных копий: {count}.',
+            QUICK_RESTORE_LATEST: 'Восстановить последний бэкап',
         },
 
         SECURITY: {
@@ -206,6 +209,7 @@ export const ru = {
             SYNC_UP_TO_DATE: 'Синхронизация завершена: все данные актуальны!',
             SYNC_FAILED: 'Ошибка синхронизации: {err}',
             UPLOAD_REMOTE_SUCCESS: 'Файл {filename} выгружен в облачную папку /backups/!',
+            DISASTER_RECOVERY_AVAILABLE: 'Аварийное восстановление: профили не найдены, но на диске доступно резервных копий: {count} (в Настройки -> Sync & Backup)!',
         },
 
         TOOLBAR: {

@@ -23,7 +23,7 @@ export class CryptoService {
      * Check if a raw string starts with the encrypted magic marker
      */
     static isEncrypted(rawContent: string): boolean {
-        if (!rawContent) return false
+        if (!rawContent || typeof rawContent !== 'string') return false
         const trimmed = rawContent.trimStart()
         return trimmed.startsWith(MAGIC_HEADER) || trimmed.startsWith(`{"magic":"${MAGIC_HEADER}"`)
     }
@@ -32,8 +32,11 @@ export class CryptoService {
      * Encrypt arbitrary string with a master password using AES-256-GCM
      */
     static encrypt(plaintext: string, password: string): string {
-        if (!password) {
-            throw new Error('Encryption password cannot be empty')
+        if (!password || typeof password !== 'string') {
+            throw new Error('Encryption password cannot be empty or invalid')
+        }
+        if (typeof plaintext !== 'string') {
+            plaintext = String(plaintext || '')
         }
 
         const salt = crypto.randomBytes(16)
@@ -71,8 +74,11 @@ export class CryptoService {
      * Decrypt encrypted container with master password
      */
     static decrypt(encryptedPayload: string, password: string): string {
-        if (!password) {
-            throw new Error('Decryption password is required')
+        if (!password || typeof password !== 'string') {
+            throw new Error('Decryption password is required and must be a valid string')
+        }
+        if (!encryptedPayload || typeof encryptedPayload !== 'string') {
+            throw new Error('Encrypted payload is required and must be a valid string')
         }
 
         const container = this.parseContainer(encryptedPayload)
@@ -159,6 +165,9 @@ export class CryptoService {
     }
 
     private static parseContainer(payload: string): EncryptedPayloadContainer {
+        if (!payload || typeof payload !== 'string') {
+            throw new Error('Not a valid Tabby encrypted payload container: payload is empty or not a string')
+        }
         try {
             const parsed = JSON.parse(payload)
             if (parsed && parsed.magic === MAGIC_HEADER) {
