@@ -20,9 +20,8 @@ export class DeviceIdentityService {
             deviceId = this.generateUuid()
             this.ensureConfigRoot()
             this.config.store.syncAndBackup.deviceId = deviceId
-            this.config.save().catch(err => {
-                console.error('[tabby-sync-and-backup] Failed to save deviceId:', err)
-            })
+            // Do NOT call this.config.save() here! Passive getters must never trigger config saves
+            // during Tabby initialization, as saving triggers configChangeBroadcast$ reloads.
         }
         return deviceId
     }
@@ -36,13 +35,7 @@ export class DeviceIdentityService {
             return configuredName
         }
 
-        const defaultName = this.detectDefaultDeviceName()
-        this.ensureConfigRoot()
-        this.config.store.syncAndBackup.deviceName = defaultName
-        this.config.save().catch(err => {
-            console.error('[tabby-sync-and-backup] Failed to save deviceName:', err)
-        })
-        return defaultName
+        return this.detectDefaultDeviceName()
     }
 
     /**

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-23
+
+### Fixed
+- **Root Cause of Duplicate Startup Passphrase & Decryption Crash**:
+  - Removed passive `config.save()` calls inside `DeviceIdentityService.getDeviceId()` and `getDeviceName()`. Previously, during plugin initialization on startup, these getters triggered an immediate configuration disk save, which fired Tabby's `hostApp.configChangeBroadcast$`, causing Tabby to immediately trigger an unprompted nested `config.load()` while the window was still booting, resulting in duplicate password prompts and `TypeError [ERR_INVALID_ARG_TYPE]: Received undefined`.
+  - Device identity is now safely resolved and stored in-memory without prematurely writing to disk on boot.
+
 ## [0.6.3] - 2026-11-23
 
 ### Fixed
