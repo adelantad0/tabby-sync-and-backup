@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-23
+
+### Changed
+- **In-App Navigation to Installed Plugins on Update**:
+  - The update action button in the **About** tab now navigates directly to Tabby's native **Installed Plugins** settings tab (`Settings -> Plugins -> Installed`), enabling one-click upgrades via Tabby's plugin manager instead of redirecting externally to GitHub.
+  - Retained an optional secondary link to GitHub Release Notes.
+  - Added localized strings for update notices and navigation buttons across English, Russian, and Simplified Chinese.
+
 ## [0.6.0] - 2026-11-23
 
 ### Added

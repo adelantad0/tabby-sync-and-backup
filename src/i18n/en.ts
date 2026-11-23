@@ -167,6 +167,10 @@ export const en = {
             REPORT_ISSUE: 'Report an Issue',
             CHECK_UPDATES: 'Check for Updates',
             COPY_DIAGNOSTICS: 'Copy Diagnostics to Clipboard',
+            UPDATE_AVAILABLE_TITLE: 'New version v{version} is available!',
+            UPDATE_AVAILABLE_DESC: 'Published on {date}',
+            GO_TO_PLUGINS: 'Open Installed Plugins to Update',
+            RUNNING_LATEST: 'You are running the latest version of Tabby Sync & Backup (v{version}).',
         },
 
         NOTIFICATIONS: {
@@ -195,6 +199,7 @@ export const en = {
             OPEN_DIR_FAILED: 'Could not open directory: {err}',
             PICK_FOLDER_FAILED: 'Could not pick folder: {err}',
             LATEST_VERSION: 'You are on the latest version (v{version})!',
+            UPDATE_AVAILABLE_NOTICE: 'New version available: v{version}! Open the Plugins tab to install.',
             DIAGNOSTICS_COPIED: 'Diagnostics info copied to clipboard!',
             MANUAL_BACKUP_SUCCESS: 'Sync & Backup: Manual backup created!',
             SYNC_COMPLETED: 'Sync completed: {summary}',

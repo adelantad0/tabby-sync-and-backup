@@ -167,6 +167,10 @@ export const zhCN = {
             REPORT_ISSUE: '报告问题',
             CHECK_UPDATES: '检查更新',
             COPY_DIAGNOSTICS: '复制诊断信息到剪贴板',
+            UPDATE_AVAILABLE_TITLE: '新版本 v{version} 可用！',
+            UPDATE_AVAILABLE_DESC: '发布日期：{date}',
+            GO_TO_PLUGINS: '前往已安装插件页面更新',
+            RUNNING_LATEST: '您正在运行最新版本的 Tabby Sync & Backup (v{version})。',
         },
 
         NOTIFICATIONS: {
@@ -195,6 +199,7 @@ export const zhCN = {
             OPEN_DIR_FAILED: '无法打开目录：{err}',
             PICK_FOLDER_FAILED: '无法选择文件夹：{err}',
             LATEST_VERSION: '您已在使用最新版本 (v{version})！',
+            UPDATE_AVAILABLE_NOTICE: '发现新版本 v{version}！请前往“插件”页面进行更新。',
             DIAGNOSTICS_COPIED: '诊断信息已复制到剪贴板！',
             MANUAL_BACKUP_SUCCESS: '同步与备份：手动备份已创建！',
             SYNC_COMPLETED: '同步完成：{summary}',

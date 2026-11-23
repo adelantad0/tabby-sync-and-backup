@@ -1,5 +1,6 @@
 import { Component, HostBinding, OnInit } from '@angular/core'
-import { ConfigService, HostAppService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
+import { AppService, ConfigService, HostAppService, NotificationsService, PlatformService, TranslateService } from 'tabby-core'
+import { SettingsTabComponent } from 'tabby-settings'
 import { BackupService, BackupSnapshotItem, RemoteBackupDeviceItem } from '../services/backup.service'
 import { CryptoService, EncryptionStatus } from '../services/crypto.service'
 import { SyncService, ConnectionTestResult, SyncTargetConfig } from '../services/sync.service'
@@ -1176,25 +1177,34 @@ interface UpdateInfo {
         <!-- ==================== TAB 4: ABOUT ==================== -->
         <div [class.d-none]="activeTab !== 'about'">
             <!-- Update Available Alert Banner -->
-            <div class="alert alert-success d-flex align-items-center justify-content-between mb-3 text-start" [class.d-none]="!updateInfo">
+            <div class="alert alert-success d-flex align-items-center justify-content-between mb-3 text-start flex-wrap gap-2" [class.d-none]="!updateInfo">
                 <div>
-                    <h6 class="alert-heading m-0">🎉 New version v{{ updateInfo?.version }} is available!</h6>
+                    <h6 class="alert-heading m-0">🎉 {{ t('SYNC_BACKUP.ABOUT.UPDATE_AVAILABLE_TITLE', { version: updateInfo?.version }) }}</h6>
                     <div class="small mt-1 text-muted">
-                        Published on {{ updateInfo?.publishedAt }}
+                        {{ t('SYNC_BACKUP.ABOUT.UPDATE_AVAILABLE_DESC', { date: updateInfo?.publishedAt }) }}
                     </div>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-sm btn-success"
-                    (click)="openUrl(updateInfo?.url || 'https://github.com/adelantad0/tabby-sync-and-backup/releases/latest')"
-                >
-                    Download Update
-                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-success"
+                        (click)="openPluginsTab()"
+                    >
+                        📦 {{ t('SYNC_BACKUP.ABOUT.GO_TO_PLUGINS') }}
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary"
+                        (click)="openUrl(updateInfo?.url || 'https://github.com/adelantad0/tabby-sync-and-backup/releases/latest')"
+                    >
+                        GitHub ↗
+                    </button>
+                </div>
             </div>
 
             <!-- Up-to-date Confirmation Banner -->
             <div class="alert alert-secondary mb-3 text-start small" [class.d-none]="!hasCheckedUpdates || updateInfo">
-                ✅ You are running the latest version of <strong>Tabby Sync &amp; Backup</strong> (v{{ pluginVersion }}).
+                ✅ {{ t('SYNC_BACKUP.ABOUT.RUNNING_LATEST', { version: pluginVersion }) }}
             </div>
 
             <div class="card mb-3">
@@ -1547,6 +1557,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         public deviceIdentity: DeviceIdentityService,
         public syncEngine: SyncEngineService,
         public translate: TranslateService,
+        private app: AppService,
     ) {
         registerTranslations(this.translate)
     }
@@ -2233,7 +2244,7 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
                     body: data.body || '',
                 }
                 this.notifications.notice(
-                    `New version available: v${latestTag}! Check the About tab for details.`,
+                    this.t('SYNC_BACKUP.NOTIFICATIONS.UPDATE_AVAILABLE_NOTICE', { version: latestTag }),
                 )
             } else {
                 this.hasCheckedUpdates = true
@@ -2249,6 +2260,54 @@ export class SyncAndBackupSettingsTabComponent implements OnInit {
         } finally {
             this.isCheckingUpdates = false
         }
+    }
+
+    openPluginsTab(): void {
+        try {
+            const settingsTab = this.app.tabs.find((tab: any) => tab instanceof SettingsTabComponent || tab.activeTab !== undefined) as any
+            if (settingsTab) {
+                settingsTab.activeTab = 'plugins'
+            }
+        } catch (e) {
+            console.warn('[tabby-sync-and-backup] Could not set settingsTab.activeTab:', e)
+        }
+
+        // 1. Switch settings navigation to 'plugins' tab
+        setTimeout(() => {
+            const navLinks = Array.from(document.querySelectorAll('a[ngbnavlink], ul.nav-pills a, .nav-link, a'))
+            const pluginLink = navLinks.find(el => {
+                const text = (el.textContent || '').trim().toLowerCase()
+                const id = (el.getAttribute('id') || '').toLowerCase()
+                return (
+                    text === 'plugins' ||
+                    text === 'плагины' ||
+                    text === '插件' ||
+                    id.includes('plugins') ||
+                    el.closest('[ngbnavitem="plugins"]') !== null
+                )
+            }) as HTMLElement | null
+
+            if (pluginLink) {
+                pluginLink.click()
+            }
+
+            // 2. Select the "Installed" sub-tab within the Plugins page
+            setTimeout(() => {
+                const subNavLinks = Array.from(document.querySelectorAll('ul.nav-tabs a, a[ngbnavlink], .nav-link'))
+                const installedLink = subNavLinks.find(el => {
+                    const text = (el.textContent || '').trim().toLowerCase()
+                    return (
+                        text === 'installed' ||
+                        text === 'установленные' ||
+                        text === '已安装'
+                    )
+                }) as HTMLElement | null
+
+                if (installedLink) {
+                    installedLink.click()
+                }
+            }, 100)
+        }, 30)
     }
 
     async copyDiagnostics(): Promise<void> {

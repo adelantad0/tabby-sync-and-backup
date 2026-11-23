@@ -167,6 +167,10 @@ export const ru = {
             REPORT_ISSUE: 'Сообщить об ошибке',
             CHECK_UPDATES: 'Проверить обновления',
             COPY_DIAGNOSTICS: 'Скопировать диагностику в буфер',
+            UPDATE_AVAILABLE_TITLE: 'Доступна новая версия v{version}!',
+            UPDATE_AVAILABLE_DESC: 'Опубликована: {date}',
+            GO_TO_PLUGINS: 'Перейти в установленные плагины для обновления',
+            RUNNING_LATEST: 'У вас установлена последняя версия Tabby Sync & Backup (v{version}).',
         },
 
         NOTIFICATIONS: {
@@ -195,6 +199,7 @@ export const ru = {
             OPEN_DIR_FAILED: 'Не удалось открыть папку: {err}',
             PICK_FOLDER_FAILED: 'Не удалось выбрать папку: {err}',
             LATEST_VERSION: 'У вас установлена последняя версия (v{version})!',
+            UPDATE_AVAILABLE_NOTICE: 'Доступна новая версия v{version}! Перейдите на вкладку «Плагины» для обновления.',
             DIAGNOSTICS_COPIED: 'Диагностическая информация скопирована в буфер обмена!',
             MANUAL_BACKUP_SUCCESS: 'Sync & Backup: ручной бэкап успешно создан!',
             SYNC_COMPLETED: 'Синхронизация завершена: {summary}',
